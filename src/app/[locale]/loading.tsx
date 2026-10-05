@@ -1,0 +1,1 @@
+export default function Loading(){return <section className="section"><div className="shell"><div className="eyebrow">Preparando la salsa…</div><div className="card" style={{height:220,marginTop:24,opacity:.55}}/></div></section>}
