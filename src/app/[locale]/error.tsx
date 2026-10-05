@@ -1,0 +1,2 @@
+"use client";
+export default function ErrorPage({reset}:{reset:()=>void}){return <section className="section"><div className="shell"><div className="card content-card"><span className="eyebrow">Algo se ha cortado</span><h1 className="section-title">La salsa necesita un momento</h1><p className="lede">No hemos podido cargar esta página. Puedes intentarlo de nuevo.</p><button className="button" onClick={reset}>Reintentar</button></div></div></section>}

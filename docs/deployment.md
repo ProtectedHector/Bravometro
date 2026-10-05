@@ -1,0 +1,13 @@
+# Deployment
+
+1. Ejecuta `npx convex dev` y crea el proyecto.
+2. Define `BRAVOMETRO_ADMIN_TOKEN` y `BRAVOMETRO_SERVICE_TOKEN` en Convex y localmente.
+3. Ejecuta `npx convex deploy`.
+4. Sube el repositorio a GitHub e impórtalo en Vercel.
+5. Crea una aplicación Clerk, desactiva contraseña y habilita Google y Apple; añade Facebook/X si dispones de sus credenciales.
+6. Activa Places API (New) y Maps JavaScript API en Google Cloud. Usa una clave secreta restringida a Places y otra clave pública restringida por dominio a Maps JavaScript API; crea también un Map ID.
+7. Configura `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_SITE_URL`, las dos claves de Clerk, `GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`, `BRAVOMETRO_ADMIN_TOKEN` y `BRAVOMETRO_SERVICE_TOKEN`.
+8. Despliega y valida `/es`, `/en`, `/es/publicar`, `/sitemap.xml`, `/robots.txt` y `/es/admin`.
+9. Asocia el dominio y actualiza `NEXT_PUBLIC_SITE_URL`.
+
+No publiques el token de administración con prefijo `NEXT_PUBLIC_`.

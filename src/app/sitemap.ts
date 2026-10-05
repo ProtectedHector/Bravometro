@@ -1,0 +1,3 @@
+import type { MetadataRoute } from "next";
+import { getPlaces } from "@/lib/data";
+export default async function sitemap():Promise<MetadataRoute.Sitemap>{const base=process.env.NEXT_PUBLIC_SITE_URL??"https://bravometro.es";const staticPaths=["","/ranking","/bravas","/mapa","/metodologia","/metros"];const places=await getPlaces();return [...["es","en"].flatMap(locale=>staticPaths.map(path=>({url:`${base}/${locale}${path}`,changeFrequency:"weekly" as const,priority:path===""?1:.8,alternates:{languages:{es:`${base}/es${path}`,en:`${base}/en${path}`}}}))),...places.flatMap(place=>["es","en"].map(locale=>({url:`${base}/${locale}/bravas/${place.slug}`,changeFrequency:"weekly" as const,priority:.7})))];}
