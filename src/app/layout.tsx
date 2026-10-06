@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: { default: "Bravómetro · Medidor de la calidad de las bravas", template: "%s · Bravómetro" },
   description: "Convertimos las opiniones sobre las patatas bravas en información que realmente puedes utilizar.",
   applicationName: "Bravómetro",
-  icons: { icon: "/assets/app-icon.png", apple: "/assets/app-icon.png" },
+  icons: { apple: "/assets/app-icon.png" },
   openGraph: { type: "website", siteName: "Bravómetro", images: [{ url: "/assets/banner.png", width: 2172, height: 724 }] },
   twitter: { card: "summary_large_image", images: ["/assets/banner.png"] },
 };
