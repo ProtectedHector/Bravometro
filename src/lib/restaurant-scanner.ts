@@ -22,6 +22,21 @@ export async function serp(parameters: Record<string, string>) {
   catch { throw new ScanError("SerpAPI no ha respondido a tiempo. Avance conservado; puedes reanudar", 504); }
   let data: JsonObject;
   try { data = object(await response.json()); } catch { throw new ScanError("Respuesta inválida de SerpAPI"); }
+  if (response.ok) {
+    for (let attempt = 0; attempt < 2 && ["Queued", "Processing"].includes(string(object(data.search_metadata).status)); attempt++) {
+      const searchId = string(object(data.search_metadata).id);
+      if (!/^[a-f0-9]{16,64}$/i.test(searchId)) throw new ScanError("SerpAPI dejó la búsqueda pendiente sin un ID válido", 503);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const archiveUrl = new URL(`https://serpapi.com/searches/${searchId}.json`);
+      archiveUrl.searchParams.set("api_key", process.env.SERPAPI_API_KEY!);
+      try {
+        response = await fetch(archiveUrl, { cache: "no-store", signal: AbortSignal.timeout(10000) });
+        data = object(await response.json());
+      } catch { throw new ScanError(`SerpAPI no pudo recuperar la consulta pendiente ${searchId}. Avance conservado`, 503); }
+      if (!response.ok) break;
+    }
+    if (["Queued", "Processing"].includes(string(object(data.search_metadata).status))) throw new ScanError(`SerpAPI sigue procesando la consulta ${string(object(data.search_metadata).id)}. Página pendiente; reanuda más tarde`, 503);
+  }
   const providerError = string(data.error);
   if (response.status === 429 || /quota|limit|run out|exceed|credit|searches.*left/i.test(providerError)) {
     throw new ScanError("Cuota de SerpAPI agotada o límite de peticiones alcanzado. Escaneo pausado; revisa tu cuota antes de reanudar", 429);
@@ -29,6 +44,22 @@ export async function serp(parameters: Record<string, string>) {
   if (!response.ok) throw new ScanError(`SerpAPI devolvió un error HTTP ${response.status}. Revisa la clave y el plan`);
   if (providerError && !/hasn't returned any results|no results/i.test(providerError)) throw new ScanError("SerpAPI no pudo completar la búsqueda. Avance conservado; revisa el proveedor");
   return data;
+}
+
+export function reviewPage(data: JsonObject, continued: boolean) {
+  const metadata = object(data.search_metadata);
+  const status = string(metadata.status);
+  const searchId = string(metadata.id);
+  const reference = /^[a-f0-9]{16,64}$/i.test(searchId) ? ` Consulta: ${searchId}.` : "";
+  const nextPage = string(object(data.serpapi_pagination).next_page_token);
+  if (status && status !== "Success") throw new ScanError(`SerpAPI no completó la página de reseñas.${reference} No se avanzó el local`, 503);
+  if (Array.isArray(data.reviews)) return { data, nextPage };
+  const count = object(data.place_info).reviews;
+  const noResults = /hasn't returned any results|no results/i.test(string(data.error));
+  if (!nextPage && (noResults || (status === "Success" && (count === 0 || (continued && count === undefined))))) {
+    return { data: { ...data, reviews: [] }, nextPage: "" };
+  }
+  throw new ScanError(`SerpAPI devolvió una respuesta sin reviews; no es un error de cuota.${reference} ${continued ? "Página de continuación" : "Primera página"}; estado ${status || "desconocido"}. Revisa esta consulta en Searches; el local sigue pendiente`);
 }
 
 export function relevantReviews(data: JsonObject) {
@@ -68,6 +99,10 @@ export async function analyzeBravas(reviews: string[]) {
     });
   } catch { throw new ScanError("Gemini no ha respondido a tiempo. Página pendiente; puedes reanudar", 504); }
   if (response.status === 429) throw new ScanError("Cuota o límite de Gemini alcanzado. Escaneo pausado; revisa AI Studio antes de reanudar", 429);
+  if (response.status === 503) throw new ScanError(`Gemini (${model}) no está disponible temporalmente o está saturado (HTTP 503). Escaneo pausado y página pendiente. Espera un minuto y pulsa Escanear restaurantes para reanudar; este error no indica por sí solo una clave inválida ni falta de saldo`, 503);
+  if (response.status >= 500) throw new ScanError(`Gemini (${model}) sufrió un error del servicio (HTTP ${response.status}). Escaneo pausado y página pendiente; vuelve a intentarlo más tarde`, response.status);
+  if (response.status === 401 || response.status === 403) throw new ScanError("Gemini rechazó la autenticación o los permisos. Revisa GEMINI_API_KEY y las restricciones de la clave en AI Studio", response.status);
+  if (response.status === 404) throw new ScanError(`Gemini no encuentra el modelo ${model} para esta API. Revisa GEMINI_MODEL y su disponibilidad en AI Studio`, 404);
   if (!response.ok) throw new ScanError(`Gemini devolvió HTTP ${response.status}. Revisa GEMINI_API_KEY, modelo y facturación`);
   let data: JsonObject;
   try { data = object(await response.json()); } catch { throw new ScanError("Respuesta inválida de Gemini"); }

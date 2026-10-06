@@ -2,8 +2,9 @@ import { auth } from "@clerk/nextjs/server";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { NextRequest, NextResponse } from "next/server";
-import { analyzeBravas, object, relevantReviews, ScanError, scannerConfiguration, serp, string } from "@/lib/restaurant-scanner";
+import { analyzeBravas, object, relevantReviews, reviewPage, ScanError, scannerConfiguration, serp, string } from "@/lib/restaurant-scanner";
 import type { Id, Doc } from "../../../../../convex/_generated/dataModel";
+import { reviewPageSize } from "../../../../../convex/scanLimits";
 
 export const maxDuration = 120;
 type Work = { kind: "finished" | "busy" | "advance" } | { kind: "search"; area: string; offset: number }
@@ -62,9 +63,10 @@ export async function POST(request: NextRequest) {
     } else if (work.kind === "reviews") {
       const target = work.target;
       const data = await fetchSerp({ engine: "google_maps_reviews", data_id: target.dataId, sort_by: "newestFirst",
-        ...(target.nextPage ? { next_page_token: target.nextPage, num: "20" } : {}) });
-      if (!Array.isArray(data.reviews) && !string(data.error)) throw new ScanError("SerpAPI no devolvió una página de reseñas válida");
-      const reviews = relevantReviews(data);
+        ...(target.nextPage ? { next_page_token: target.nextPage, num: String(reviewPageSize(target.reviewCount ?? 0)) } : {}) });
+      const page = reviewPage(data, Boolean(target.nextPage));
+      const reviewCount = Array.isArray(page.data.reviews) ? page.data.reviews.length : 0;
+      const reviews = relevantReviews(page.data);
       const analysis = await analyzeBravas(reviews);
       let place: { name: string; address: string; latitude?: number; longitude?: number } | undefined;
       if (analysis.mentionCount > 0 && !target.placeId) {
@@ -75,8 +77,8 @@ export async function POST(request: NextRequest) {
           ...(typeof gps.longitude === "number" ? { longitude: gps.longitude } : {}) };
         if (!place.name || !place.address) throw new ScanError("No se pudo recuperar el nombre y dirección del local con bravas");
       }
-      const nextPage = string(object(data.serpapi_pagination).next_page_token);
-      await convex.mutation(mutation("saveReviews"), { lease, targetId: target._id as Id<"restaurantScanTargets">, ...analysis,
+      const nextPage = page.nextPage;
+      await convex.mutation(mutation("saveReviews"), { lease, targetId: target._id as Id<"restaurantScanTargets">, reviewCount, ...analysis,
         ...(nextPage ? { nextPage } : {}), ...(place ? { place } : {}) });
     }
     return NextResponse.json(await convex.query(query, {}), { headers: { "Cache-Control": "no-store" } });

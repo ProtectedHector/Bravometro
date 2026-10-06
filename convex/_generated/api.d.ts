@@ -13,6 +13,7 @@ import type * as contributions from "../contributions.js";
 import type * as placeImages from "../placeImages.js";
 import type * as places from "../places.js";
 import type * as restaurantScanner from "../restaurantScanner.js";
+import type * as scanLimits from "../scanLimits.js";
 import type * as scanPlan from "../scanPlan.js";
 import type * as seed from "../seed.js";
 
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   placeImages: typeof placeImages;
   places: typeof places;
   restaurantScanner: typeof restaurantScanner;
+  scanLimits: typeof scanLimits;
   scanPlan: typeof scanPlan;
   seed: typeof seed;
 }>;

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, type QueryCtx, type MutationCtx } from "./_generated/server";
 import { SCAN_AREAS, SCANNER_USER_ID, SCANNER_VERSION } from "./scanPlan";
+import { REVIEW_LIMIT, reviewLimitReached } from "./scanLimits";
 
 async function permitted(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -40,7 +41,18 @@ export const acquire = mutation({
     }
     if (scan.finished) return { kind: "finished" as const };
     if ((scan.leaseUntil ?? 0) > Date.now()) return { kind: "busy" as const };
-    const target = await ctx.db.query("restaurantScanTargets").withIndex("by_areaIndex_and_status", query => query.eq("areaIndex", scan.areaIndex).eq("status", "pending")).first();
+    let target = await ctx.db.query("restaurantScanTargets").withIndex("by_areaIndex_and_status", query => query.eq("areaIndex", scan.areaIndex).eq("status", "pending")).first();
+    if (target && target.reviewCount === undefined) {
+      const pages = await ctx.db.query("restaurantScanPages").withIndex("by_targetId_and_page", query => query.eq("targetId", target!._id)).take(REVIEW_LIMIT / 20);
+      const reviewCount = pages.reduce((count, page) => count + (page.reviewCount ?? 20), 0);
+      await ctx.db.patch("restaurantScanTargets", target._id, { reviewCount });
+      target = { ...target, reviewCount };
+    }
+    if (target && reviewLimitReached(target.reviewCount ?? 0, target.mentionCount)) {
+      await ctx.db.patch("restaurantScanTargets", target._id, { status: "complete", nextPage: undefined, limitReached: true, updatedAt: Date.now() });
+      await ctx.db.patch("restaurantScans", scan._id, { checked: scan.checked + 1, lease: undefined, leaseUntil: undefined, error: undefined, updatedAt: Date.now() });
+      return { kind: "advance" as const };
+    }
     if (!target && scan.searchComplete) {
       const areaIndex = scan.areaIndex + 1;
       await ctx.db.patch("restaurantScans", scan._id, { areaIndex, searchOffset: 0, searchComplete: false,
@@ -75,7 +87,7 @@ export const saveSearch = mutation({
     for (const target of targets.slice(0, 20)) {
       const existing = await ctx.db.query("restaurantScanTargets").withIndex("by_externalId", query => query.eq("externalId", target.externalId)).unique();
       if (!existing) await ctx.db.insert("restaurantScanTargets", { ...target, areaIndex: scan.areaIndex, status: "pending",
-        mentionCount: 0, evidenceCount: 0, totals: {}, weights: {}, updatedAt: Date.now() });
+        mentionCount: 0, evidenceCount: 0, reviewCount: 0, totals: {}, weights: {}, updatedAt: Date.now() });
     }
     await ctx.db.patch("restaurantScans", scan._id, { searchOffset: scan.searchOffset + 20,
       searchComplete: !hasNext || scan.searchOffset >= 100, lease: undefined, leaseUntil: undefined, updatedAt: Date.now() });
@@ -84,10 +96,11 @@ export const saveSearch = mutation({
 
 export const saveReviews = mutation({
   args: { lease: v.string(), targetId: v.id("restaurantScanTargets"), nextPage: v.optional(v.string()),
-    mentionCount: v.number(), evidenceCount: v.number(), totals: v.record(v.string(), v.number()), weights: v.record(v.string(), v.number()),
+    reviewCount: v.number(), mentionCount: v.number(), evidenceCount: v.number(), totals: v.record(v.string(), v.number()), weights: v.record(v.string(), v.number()),
     place: v.optional(v.object({ name: v.string(), address: v.string(), latitude: v.optional(v.number()), longitude: v.optional(v.number()) })) },
   handler: async (ctx, args) => {
     const scan = await owned(ctx, args.lease);
+    if (!Number.isInteger(args.reviewCount) || args.reviewCount < 0 || args.reviewCount > 20 || args.mentionCount > args.reviewCount) throw new Error("Cantidad de reseñas inválida");
     if (!Number.isInteger(args.mentionCount) || args.mentionCount < 0 || args.mentionCount > 20 || !Number.isInteger(args.evidenceCount) || args.evidenceCount < 0 || args.evidenceCount > args.mentionCount) throw new Error("Cantidad de evidencias inválida");
     const target = await ctx.db.get("restaurantScanTargets", args.targetId);
     if (!target || target.areaIndex !== scan.areaIndex || target.status !== "pending") throw new Error("Local de escaneo inválido");
@@ -99,6 +112,9 @@ export const saveReviews = mutation({
       if (repeated) throw new Error("SerpAPI repite una página de reseñas. Escaneo detenido para evitar duplicados");
     }
     const mentionCount = target.mentionCount + args.mentionCount;
+    const reviewCount = (target.reviewCount ?? 0) + args.reviewCount;
+    const limitReached = Boolean(args.nextPage) && reviewLimitReached(reviewCount, mentionCount);
+    const nextPage = limitReached ? undefined : args.nextPage;
     const evidenceCount = target.evidenceCount + args.evidenceCount;
     const totals = { ...target.totals }, weights = { ...target.weights };
     for (const key of ["overall", "potato", "sauce", "spiciness", "taste", "texture", "quantity", "value"]) {
@@ -133,10 +149,10 @@ export const saveReviews = mutation({
       if (existing) await ctx.db.patch("automaticRatings", existing._id, rating);
       else await ctx.db.insert("automaticRatings", rating);
     }
-    await ctx.db.insert("restaurantScanPages", { targetId: target._id, page });
-    await ctx.db.patch("restaurantScanTargets", target._id, { placeId, nextPage: args.nextPage,
-      status: args.nextPage ? "pending" : "complete", mentionCount, evidenceCount, totals, weights, updatedAt: Date.now() });
-    await ctx.db.patch("restaurantScans", scan._id, { checked: scan.checked + (args.nextPage ? 0 : 1), imported: scan.imported + (imported ? 1 : 0),
+    await ctx.db.insert("restaurantScanPages", { targetId: target._id, page, reviewCount: args.reviewCount });
+    await ctx.db.patch("restaurantScanTargets", target._id, { placeId, nextPage, reviewCount, limitReached,
+      status: nextPage ? "pending" : "complete", mentionCount, evidenceCount, totals, weights, updatedAt: Date.now() });
+    await ctx.db.patch("restaurantScans", scan._id, { checked: scan.checked + (nextPage ? 0 : 1), imported: scan.imported + (imported ? 1 : 0),
       reviewPages: scan.reviewPages + 1, lease: undefined, leaseUntil: undefined, updatedAt: Date.now() });
   },
 });
