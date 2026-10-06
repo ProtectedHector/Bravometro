@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { NextRequest, NextResponse } from "next/server";
-import { analyzeBravas, object, relevantReviews, reviewPage, ScanError, scannerConfiguration, serp, string } from "@/lib/restaurant-scanner";
+import { analyzeBravas, object, relevantReviews, reviewPage, ScanError, scannerConfiguration, scannerFailure, serp, string } from "@/lib/restaurant-scanner";
 import type { Id, Doc } from "../../../../../convex/_generated/dataModel";
 import { reviewPageSize } from "../../../../../convex/scanLimits";
 
@@ -11,6 +11,14 @@ type Work = { kind: "finished" | "busy" | "advance" } | { kind: "search"; area: 
   | { kind: "reviews"; area: string; target: Doc<"restaurantScanTargets"> };
 const query = makeFunctionReference<"query">("restaurantScanner:status");
 const mutation = (name: string) => makeFunctionReference<"mutation">(`restaurantScanner:${name}`);
+
+async function convexCall<Result>(operation: string, call: () => Promise<Result>): Promise<Result> {
+  try { return await call(); }
+  catch (error) { throw scannerFailure(error, `restaurantScanner:${operation}`); }
+}
+
+const scanStatus = (convex: ConvexHttpClient) => convexCall("status", () => convex.query(query, {}));
+const scanMutation = (convex: ConvexHttpClient, name: string, args: Record<string, unknown>) => convexCall(name, () => convex.mutation(mutation(name), args));
 
 async function client() {
   const { userId, getToken } = await auth();
@@ -27,11 +35,12 @@ async function client() {
 }
 
 function failure(error: unknown) {
-  return NextResponse.json({ error: error instanceof ScanError ? error.message : "No se pudo acceder al escáner. Comprueba el despliegue de Convex y la plantilla JWT de Clerk" }, { status: error instanceof ScanError ? error.status : 503 });
+  const failure = scannerFailure(error);
+  return NextResponse.json({ error: failure.message }, { status: failure.status });
 }
 
 export async function GET() {
-  try { return NextResponse.json(await (await client()).query(query, {}), { headers: { "Cache-Control": "no-store" } }); }
+  try { return NextResponse.json(await scanStatus(await client()), { headers: { "Cache-Control": "no-store" } }); }
   catch (error) { return failure(error); }
 }
 
@@ -41,13 +50,13 @@ export async function POST(request: NextRequest) {
   const lease = crypto.randomUUID();
   try {
     convex = await client();
-    const status = await convex.query(query, {});
+    const status = await scanStatus(convex);
     if (!status.allowed) throw new ScanError("No autorizado", 403);
     scannerConfiguration();
-    const work = await convex.mutation(mutation("acquire"), { lease }) as Work;
+    const work = await scanMutation(convex, "acquire", { lease }) as Work;
     if (work.kind === "busy") throw new ScanError("Ya hay un paso de escaneo en curso. Espera antes de reanudar", 409);
     const fetchSerp = async (parameters: Record<string, string>) => {
-      await convex!.mutation(mutation("reserveRequest"), { lease });
+      await scanMutation(convex!, "reserveRequest", { lease });
       return serp(parameters);
     };
     if (work.kind === "search") {
@@ -59,7 +68,7 @@ export async function POST(request: NextRequest) {
         return externalId && dataId ? [{ externalId, dataId }] : [];
       });
       if (results.length && !targets.length) throw new ScanError("SerpAPI no devolvió identificadores de los locales. No se avanzó la búsqueda");
-      await convex.mutation(mutation("saveSearch"), { lease, targets, hasNext: Boolean(string(object(data.serpapi_pagination).next)) });
+      await scanMutation(convex, "saveSearch", { lease, targets, hasNext: Boolean(string(object(data.serpapi_pagination).next)) });
     } else if (work.kind === "reviews") {
       const target = work.target;
       const data = await fetchSerp({ engine: "google_maps_reviews", data_id: target.dataId, sort_by: "newestFirst",
@@ -78,13 +87,13 @@ export async function POST(request: NextRequest) {
         if (!place.name || !place.address) throw new ScanError("No se pudo recuperar el nombre y dirección del local con bravas");
       }
       const nextPage = page.nextPage;
-      await convex.mutation(mutation("saveReviews"), { lease, targetId: target._id as Id<"restaurantScanTargets">, reviewCount, ...analysis,
+      await scanMutation(convex, "saveReviews", { lease, targetId: target._id as Id<"restaurantScanTargets">, reviewCount, ...analysis,
         ...(nextPage ? { nextPage } : {}), ...(place ? { place } : {}) });
     }
-    return NextResponse.json(await convex.query(query, {}), { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(await scanStatus(convex), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    const message = error instanceof ScanError ? error.message : "Error guardando el paso en Convex. Avance conservado; revisa el despliegue";
-    if (convex) try { await convex.mutation(mutation("fail"), { lease, error: message }); } catch {}
+    const message = scannerFailure(error).message;
+    if (convex) try { await scanMutation(convex, "fail", { lease, error: message }); } catch {}
     return failure(error);
   }
 }
