@@ -1,0 +1,56 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useUser } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
+
+type Status = { allowed: boolean; ownerId?: string; area?: string; finished?: boolean; checked?: number; imported?: number;
+  reviewPages?: number; requests?: number; error?: string | null };
+
+export function RestaurantScanner() {
+  const { isSignedIn, user } = useUser();
+  const [status, setStatus] = useState<Status>({ allowed: false });
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState("");
+  const active = useRef(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    let mounted = true;
+    active.current = false;
+    if (isSignedIn) fetch("/api/restaurants/scan", { cache: "no-store" }).then(async response => {
+      const data = await response.json();
+      if (mounted && response.ok) setStatus({ ...data, ownerId: user?.id });
+    }).catch(() => {});
+    return () => { mounted = false; active.current = false; };
+  }, [isSignedIn, user?.id]);
+
+  async function scan() {
+    if (active.current) return;
+    active.current = true;
+    setRunning(true);
+    setError("");
+    try {
+      for (let step = 0; step < 200 && active.current; step++) {
+        const response = await fetch("/api/restaurants/scan", { method: "POST" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "No se pudo escanear");
+        setStatus({ ...data, ownerId: user?.id });
+        if (data.finished) break;
+        if (active.current) await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Error de escaneo"); }
+    finally { active.current = false; setRunning(false); router.refresh(); }
+  }
+
+  if (!isSignedIn || !status.allowed || status.ownerId !== user?.id) return null;
+  return <aside className="card content-card" style={{ marginBottom: 24 }}>
+    <h2>Catálogo de bravas · administración</h2>
+    <p>Zona: <b>{status.area}</b> · {status.checked ?? 0} locales revisados · {status.imported ?? 0} con bravas · {status.reviewPages ?? 0} páginas de reseñas · {status.requests ?? 0} consultas SerpAPI.</p>
+    <p>Solo se incorporan locales con menciones al plato. Las notas de IA son provisionales y pesan menos que las manuales. El progreso se guarda; no se guardan textos de reseñas.</p>
+    <p><b>Comprueba que tus proyectos están en el nivel gratuito:</b> si tienen facturación activa, este botón puede generar cargos. Verifica también los permisos de análisis de reseñas y las condiciones de Gemini antes de iniciar.</p>
+    <button className="button" disabled={running || status.finished} onClick={scan}>{running ? "Escaneando…" : status.finished ? "Escaneo completado" : "Escanear restaurantes"}</button>
+    {running && <button className="button ghost" style={{ marginLeft: 12 }} onClick={() => { active.current = false; }}>Pausar tras esta página</button>}
+    <p role="status" aria-live="polite">{error || status.error || (running ? "No cierres esta página. Se detendrá al alcanzar una cuota o 200 pasos; podrás reanudar." : "Puedes reanudar desde el último paso guardado.")}</p>
+  </aside>;
+}

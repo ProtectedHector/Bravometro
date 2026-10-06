@@ -4,9 +4,25 @@ import type { GooglePlaceCandidate } from "@/lib/types";
 
 let loader:Promise<void>|null=null;
 function loadGoogleMaps(apiKey:string){
-  if(typeof google!=="undefined"&&google.maps)return Promise.resolve();
+  if(typeof google!=="undefined"&&typeof google.maps?.importLibrary==="function")return Promise.resolve();
   if(loader)return loader;
-  loader=new Promise((resolve,reject)=>{const existing=document.querySelector<HTMLScriptElement>('script[data-bravometro-google-maps]');if(existing){existing.addEventListener("load",()=>resolve(),{once:true});existing.addEventListener("error",()=>reject(new Error("Google Maps no se ha podido cargar")),{once:true});return}const script=document.createElement("script");script.dataset.bravometroGoogleMaps="true";script.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async`;script.async=true;script.onload=()=>resolve();script.onerror=()=>reject(new Error("Google Maps no se ha podido cargar"));document.head.appendChild(script)});
+  loader=new Promise<void>((resolve,reject)=>{
+    const callbackName="bravometroGoogleMapsReady";
+    const callbacks=window as unknown as Record<string,unknown>;
+    const script=document.createElement("script");
+    const cleanup=()=>{window.clearTimeout(timeoutId);delete callbacks[callbackName]};
+    const fail=()=>{cleanup();script.remove();reject(new Error("Google Maps no se ha podido cargar"))};
+    const timeoutId=window.setTimeout(fail,30000);
+    callbacks[callbackName]=()=>{
+      if(typeof google==="undefined"||typeof google.maps?.importLibrary!=="function"){fail();return}
+      cleanup();resolve();
+    };
+    script.dataset.bravometroGoogleMaps="true";
+    script.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async&callback=${callbackName}`;
+    script.async=true;
+    script.onerror=fail;
+    document.head.appendChild(script);
+  }).catch(reason=>{loader=null;throw reason});
   return loader;
 }
 
@@ -14,7 +30,50 @@ export function GooglePlacesMap({apiKey,mapId,places,selectedId,userLocation,onS
   const containerRef=useRef<HTMLDivElement>(null);const mapRef=useRef<google.maps.Map|null>(null);const markersRef=useRef<google.maps.marker.AdvancedMarkerElement[]>([]);const userMarkerRef=useRef<google.maps.marker.AdvancedMarkerElement|null>(null);const onSelectRef=useRef(onSelect);const[ready,setReady]=useState(false);const[error,setError]=useState("");
   useEffect(()=>{onSelectRef.current=onSelect},[onSelect]);
   useEffect(()=>{if(!apiKey||!containerRef.current)return;let active=true;void loadGoogleMaps(apiKey).then(async()=>{const{Map}=await google.maps.importLibrary("maps") as google.maps.MapsLibrary;if(!active||!containerRef.current)return;mapRef.current=new Map(containerRef.current,{center:{lat:40.4168,lng:-3.7038},zoom:13,mapId:mapId||"DEMO_MAP_ID",streetViewControl:false,mapTypeControl:false,fullscreenControl:true});setReady(true)}).catch(reason=>{if(active)setError(reason instanceof Error?reason.message:"Google Maps no se ha podido cargar")});return()=>{active=false}},[apiKey,mapId]);
-  useEffect(()=>{if(!ready||!mapRef.current)return;let active=true;void google.maps.importLibrary("marker").then(library=>{if(!active||!mapRef.current)return;const{AdvancedMarkerElement,PinElement}=library as google.maps.MarkerLibrary;for(const marker of markersRef.current)marker.map=null;markersRef.current=[];if(userMarkerRef.current){userMarkerRef.current.map=null;userMarkerRef.current=null}const bounds=new google.maps.LatLngBounds();for(const place of places){if(typeof place.latitude!=="number"||typeof place.longitude!=="number")continue;const selected=place.googlePlaceId===selectedId;const pin=new PinElement({background:selected?"#d83b19":"#f47721",borderColor:"#ffffff",glyphColor:"#ffffff",scale:selected?1.25:1});const marker=new AdvancedMarkerElement({map:mapRef.current,position:{lat:place.latitude,lng:place.longitude},title:place.name,content:pin.element,gmpClickable:true,zIndex:selected?20:10});marker.addListener("click",()=>onSelectRef.current(place.googlePlaceId));markersRef.current.push(marker);bounds.extend({lat:place.latitude,lng:place.longitude})}if(userLocation){const pin=new PinElement({background:"#2563eb",borderColor:"#ffffff",glyphColor:"#ffffff",glyph:"●",scale:1.1});userMarkerRef.current=new AdvancedMarkerElement({map:mapRef.current,position:{lat:userLocation.latitude,lng:userLocation.longitude},title:"Tu ubicación",content:pin.element,zIndex:30});bounds.extend({lat:userLocation.latitude,lng:userLocation.longitude})}if(!bounds.isEmpty()){mapRef.current.fitBounds(bounds,56);if(places.length<=1){const listener=google.maps.event.addListenerOnce(mapRef.current,"idle",()=>{if((mapRef.current?.getZoom()??0)>16)mapRef.current?.setZoom(16)});void listener}}}) ;return()=>{active=false}},[places,ready,selectedId,userLocation]);
+  useEffect(()=>{
+    if(!ready||!mapRef.current)return;
+    let active=true;
+    let infoWindow:google.maps.InfoWindow|undefined;
+    void google.maps.importLibrary("marker").then(library=>{
+      if(!active||!mapRef.current)return;
+      const{AdvancedMarkerElement,PinElement}=library as google.maps.MarkerLibrary;
+      for(const marker of markersRef.current)marker.map=null;
+      markersRef.current=[];
+      if(userMarkerRef.current){userMarkerRef.current.map=null;userMarkerRef.current=null}
+      infoWindow=new google.maps.InfoWindow();
+      const bounds=new google.maps.LatLngBounds();
+      for(const place of places){
+        if(typeof place.latitude!=="number"||typeof place.longitude!=="number")continue;
+        const selected=place.googlePlaceId===selectedId;
+        const pin=new PinElement({background:selected?"#d83b19":"#f47721",borderColor:"#ffffff",glyphColor:"#ffffff",scale:selected?1.25:1});
+        const marker=new AdvancedMarkerElement({map:mapRef.current,position:{lat:place.latitude,lng:place.longitude},title:place.name,content:pin.element,gmpClickable:true,zIndex:selected?20:10});
+        const showDetails=()=>{
+          const content=document.createElement("div");
+          const name=document.createElement("strong");
+          name.textContent=place.name;
+          const address=document.createElement("p");
+          address.textContent=place.address;
+          content.append(name,address);
+          infoWindow?.setContent(content);
+          infoWindow?.open({map:mapRef.current,anchor:marker,shouldFocus:false});
+        };
+        marker.addListener("click",()=>{showDetails();onSelectRef.current(place.googlePlaceId)});
+        if(selected)showDetails();
+        markersRef.current.push(marker);
+        bounds.extend({lat:place.latitude,lng:place.longitude});
+      }
+      if(userLocation){
+        const pin=new PinElement({background:"#2563eb",borderColor:"#ffffff",glyphColor:"#ffffff",glyph:"●",scale:1.1});
+        userMarkerRef.current=new AdvancedMarkerElement({map:mapRef.current,position:{lat:userLocation.latitude,lng:userLocation.longitude},title:"Tu ubicación",content:pin.element,zIndex:30});
+        bounds.extend({lat:userLocation.latitude,lng:userLocation.longitude});
+      }
+      if(!bounds.isEmpty()){
+        mapRef.current.fitBounds(bounds,56);
+        if(places.length<=1)google.maps.event.addListenerOnce(mapRef.current,"idle",()=>{if((mapRef.current?.getZoom()??0)>16)mapRef.current?.setZoom(16)});
+      }
+    }).catch(reason=>{if(active)setError(reason instanceof Error?reason.message:"Google Maps no se ha podido cargar")});
+    return()=>{active=false;infoWindow?.close()};
+  },[places,ready,selectedId,userLocation]);
   if(!apiKey)return <div className="places-map places-map-unavailable">{unavailableLabel}</div>;
   return <div className="places-map-shell">{error&&<div className="notice">{error}</div>}<div ref={containerRef} className="places-map" role="application" aria-label="Google Maps"/></div>;
 }
