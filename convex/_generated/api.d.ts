@@ -10,7 +10,10 @@
 
 import type * as admin from "../admin.js";
 import type * as contributions from "../contributions.js";
+import type * as placeImages from "../placeImages.js";
 import type * as places from "../places.js";
+import type * as restaurantScanner from "../restaurantScanner.js";
+import type * as scanPlan from "../scanPlan.js";
 import type * as seed from "../seed.js";
 
 import type {
@@ -22,7 +25,10 @@ import type {
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   contributions: typeof contributions;
+  placeImages: typeof placeImages;
   places: typeof places;
+  restaurantScanner: typeof restaurantScanner;
+  scanPlan: typeof scanPlan;
   seed: typeof seed;
 }>;
 

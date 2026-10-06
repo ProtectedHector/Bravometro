@@ -16,7 +16,9 @@ async function client() {
   if (!userId) throw new ScanError("Debes iniciar sesión", 401);
   const url = process.env.NEXT_PUBLIC_CONVEX_URL;
   if (!url) throw new ScanError("Convex no está configurado", 503);
-  const token = await getToken({ template: "convex" });
+  let token: string | null;
+  try { token = await getToken({ template: "convex" }); }
+  catch { throw new ScanError("Clerk no pudo generar el JWT. Comprueba que exista una plantilla JWT llamada convex, con audience convex, en el Clerk de este entorno. Configura también CLERK_JWT_ISSUER_DOMAIN en Convex", 503); }
   if (!token) throw new ScanError("Configura la plantilla JWT convex en Clerk y CLERK_JWT_ISSUER_DOMAIN en Convex", 503);
   const convex = new ConvexHttpClient(url);
   convex.setAuth(token);
