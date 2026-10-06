@@ -2,15 +2,16 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Analytics } from "@vercel/analytics/next";
+import { siteUrl } from "@/lib/site-url";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://bravometro.es"),
+  metadataBase: siteUrl(),
   title: { default: "Bravómetro · Medidor de la calidad de las bravas", template: "%s · Bravómetro" },
   description: "Convertimos las opiniones sobre las patatas bravas en información que realmente puedes utilizar.",
   applicationName: "Bravómetro",
   icons: { apple: "/assets/app-icon.png" },
-  openGraph: { type: "website", siteName: "Bravómetro", images: [{ url: "/assets/banner.png", width: 2172, height: 724 }] },
-  twitter: { card: "summary_large_image", images: ["/assets/banner.png"] },
+  openGraph: { type: "website", siteName: "Bravómetro", images: [{ url: "/assets/app-icon.png", width: 1254, height: 1254, type: "image/png", alt: "Logo de Bravómetro" }] },
+  twitter: { card: "summary", images: [{ url: "/assets/app-icon.png", alt: "Logo de Bravómetro" }] },
 };
 
 export const viewport: Viewport = { themeColor: "#d83b19", colorScheme: "light" };
