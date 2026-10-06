@@ -12,6 +12,8 @@ export function RestaurantScanner() {
   const [status, setStatus] = useState<Status>({ allowed: false });
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
+  const [verification, setVerification] = useState<{ ownerId?: string; error: string }>();
+  const [attempt, setAttempt] = useState(0);
   const active = useRef(false);
   const router = useRouter();
 
@@ -20,10 +22,20 @@ export function RestaurantScanner() {
     active.current = false;
     if (isSignedIn) fetch("/api/restaurants/scan", { cache: "no-store" }).then(async response => {
       const data = await response.json();
-      if (mounted && response.ok) setStatus({ ...data, ownerId: user?.id });
-    }).catch(() => {});
+      if (!response.ok) throw new Error(data.error || "No se pudo comprobar el acceso de administrador");
+      if (typeof data.allowed !== "boolean") throw new Error("El servidor devolvió una respuesta de permisos inválida");
+      if (mounted) {
+        setStatus({ ...data, ownerId: user?.id });
+        setVerification({ ownerId: user?.id, error: data.allowed ? "" : "La sesión actual no se ha reconocido como el administrador. Comprueba que el usuario de Clerk esté vinculado al usuario jx72bkvz217bgnwv4g3pvvywh98fq64v en el Convex de este entorno y que CLERK_JWT_ISSUER_DOMAIN coincida con el issuer de Clerk." });
+      }
+    }).catch(caught => {
+      if (mounted) {
+        setStatus({ allowed: false, ownerId: user?.id });
+        setVerification({ ownerId: user?.id, error: caught instanceof Error ? caught.message : "No se pudo comprobar el acceso de administrador" });
+      }
+    });
     return () => { mounted = false; active.current = false; };
-  }, [isSignedIn, user?.id]);
+  }, [isSignedIn, user?.id, attempt]);
 
   async function scan() {
     if (active.current) return;
@@ -43,7 +55,13 @@ export function RestaurantScanner() {
     finally { active.current = false; setRunning(false); router.refresh(); }
   }
 
-  if (!isSignedIn || !status.allowed || status.ownerId !== user?.id) return null;
+  if (!isSignedIn) return null;
+  if (verification?.ownerId === user?.id && verification?.error) return <aside className="card content-card" style={{ marginBottom: 24 }}>
+    <h2>Acceso al escáner de restaurantes</h2>
+    <p role="alert">{verification.error}</p>
+    <button className="button ghost" onClick={() => setAttempt(value => value + 1)}>Comprobar acceso de nuevo</button>
+  </aside>;
+  if (!status.allowed || status.ownerId !== user?.id) return null;
   return <aside className="card content-card" style={{ marginBottom: 24 }}>
     <h2>Catálogo de bravas · administración</h2>
     <p>Zona: <b>{status.area}</b> · {status.checked ?? 0} locales revisados · {status.imported ?? 0} con bravas · {status.reviewPages ?? 0} páginas de reseñas · {status.requests ?? 0} consultas SerpAPI.</p>
