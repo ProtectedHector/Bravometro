@@ -37,7 +37,8 @@ export function confidenceLevel(score: number): ConfidenceLevel {
   return "low";
 }
 
-export function formatScore(score: number, locale: string): string {
+export function formatScore(score: number | undefined, locale: string): string {
+  if (score === undefined) return "—";
   return new Intl.NumberFormat(locale, {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
