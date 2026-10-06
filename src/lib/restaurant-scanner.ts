@@ -4,6 +4,26 @@ export class ScanError extends Error {
   constructor(message: string, public status = 502) { super(message); }
 }
 
+export function scannerFailure(error: unknown, operation = "acceso") {
+  if (error instanceof ScanError) return error;
+  const message = error instanceof Error ? error.message : "";
+  if (/Could not find public function|FunctionNotFound/i.test(message)) return new ScanError(`Convex no tiene publicada la función del escáner (${operation}). Ejecuta npx convex deploy en Bravometro y comprueba que NEXT_PUBLIC_CONVEX_URL apunte a ese despliegue`, 503);
+  if (/ArgumentValidationError|extra field|missing required field|does not match.*validator|schema validation/i.test(message)) return new ScanError(`El esquema o los argumentos de Convex no coinciden con esta versión del escáner (${operation}). Despliega Convex con npx convex deploy; el límite de 500 reseñas requiere el nuevo campo reviewCount`, 503);
+  if (/No auth provider|InvalidAuth|Unauthenticated|JWT|token.*(expired|invalid)|issuer|audience/i.test(message)) return new ScanError(`Convex rechazó el JWT (${operation}). Comprueba la plantilla convex, audience convex y CLERK_JWT_ISSUER_DOMAIN del mismo entorno que las claves Clerk de Vercel`, 401);
+  const publicMessages = [
+    "No autorizado para escanear restaurantes",
+    "El paso de escaneo ha caducado; vuelve a intentarlo",
+    "Cantidad de reseñas inválida", "Cantidad de evidencias inválida", "Local de escaneo inválido",
+    "La página de reseñas ya se procesó",
+    "SerpAPI repite una página de reseñas. Escaneo detenido para evitar duplicados",
+    "Puntuación automática inválida", "Faltan los datos del local que menciona bravas",
+  ];
+  const publicMessage = publicMessages.find(value => message.includes(`Error: ${value}\n`) || message.endsWith(`Error: ${value}`) || message === value);
+  if (publicMessage) return new ScanError(publicMessage, publicMessage.startsWith("No autorizado") ? 403 : 409);
+  if (/fetch failed|ECONNREFUSED|ENOTFOUND|timed? ?out|network/i.test(message)) return new ScanError(`No se pudo conectar con Convex (${operation}). Comprueba NEXT_PUBLIC_CONVEX_URL y la disponibilidad del despliegue`, 503);
+  return new ScanError(`Falló el escáner durante ${operation}. Revisa los logs de esa función en Convex y Vercel; este mensaje no confirma un problema con Clerk`, 503);
+}
+
 type JsonObject = Record<string, unknown>;
 export const object = (value: unknown): JsonObject => value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
 export const string = (value: unknown) => typeof value === "string" ? value : "";
