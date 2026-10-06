@@ -10,4 +10,6 @@
 8. Despliega y valida `/es`, `/en`, `/es/publicar`, `/sitemap.xml`, `/robots.txt` y `/es/admin`.
 9. Asocia el dominio y actualiza `NEXT_PUBLIC_SITE_URL`.
 
+En Vercel Production configura `NEXT_PUBLIC_SITE_URL=https://www.bravometro.com` y vuelve a desplegar después de cambiarla. Nunca uses localhost en ese entorno: las URLs absolutas de Open Graph deben ser accesibles para WhatsApp. El logo PNG se comparte como imagen; el favicon SVG solo afecta al icono de la pestaña. Los metadatos usan el dominio público como respaldo si la variable falta, es inválida o apunta a localhost en producción. WhatsApp puede conservar la vista previa de enlaces ya compartidos; prueba un enlace nuevo añadiendo `?share=2` tras desplegar. Los deployments protegidos de Vercel no son accesibles para bots sin autenticación: comparte el dominio público.
+
 No publiques el token de administración con prefijo `NEXT_PUBLIC_`.
