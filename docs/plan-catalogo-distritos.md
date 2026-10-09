@@ -1,6 +1,6 @@
 # Plan de catálogo inicial y puntuación de bravas por distritos
 
-Fecha: 8 de octubre de 2026. Estado: Fase 1 actualizada a `bravas-gemini-2.0`, pendiente de desplegar Convex y validar con un piloto controlado; actualizar el código no ejecuta búsquedas ni importaciones.
+Fecha: 8 de octubre de 2026. Estado: Fase 1 actualizada a `bravas-gemini-2.1`, pendiente de desplegar Convex y validar con un piloto controlado; actualizar el código no ejecuta búsquedas ni importaciones.
 
 ## Implementación del piloto
 

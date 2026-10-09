@@ -12,6 +12,14 @@ type Work = { kind: "finished" | "busy" | "advance" } | { kind: "search"; area: 
   | { kind: "paused"; pausedUntil: number; pauseReason: "hourly" | "monthly" };
 const query = makeFunctionReference<"query">("restaurantScanner:status");
 const mutation = (name: string) => makeFunctionReference<"mutation">(`restaurantScanner:${name}`);
+const discoveryQueries = [
+  (area: string) => `patatas bravas ${area} Madrid`,
+  (area: string) => `bravas ${area} Madrid`,
+  (area: string) => `bares de tapas con bravas ${area} Madrid`,
+  (area: string) => `raciones bravas ${area} Madrid`,
+  (area: string) => `bar bravas ${area} Madrid`,
+  (area: string) => `restaurante bravas ${area} Madrid`,
+] as const;
 
 async function convexCall<Result>(operation: string, call: () => Promise<Result>): Promise<Result> {
   try { return await call(); }
@@ -63,8 +71,9 @@ export async function POST(request: NextRequest) {
       return serp(parameters);
     };
     if (work.kind === "search") {
-      const data = await fetchSerp({ engine: "google_maps", type: "search", q: `restaurantes españoles bravas ${work.area} Madrid`,
-        ll: "@40.4168,-3.7038,12z", start: String(work.offset) });
+      const queryIndex = Math.min(Math.floor(work.offset / 20), discoveryQueries.length - 1);
+      const data = await fetchSerp({ engine: "google_maps", type: "search", q: discoveryQueries[queryIndex](work.area),
+        ll: "@40.4168,-3.7038,12z" });
       const results = Array.isArray(data.local_results) ? data.local_results : [];
       const targets = results.flatMap(value => {
         const result = object(value), externalId = string(result.place_id), dataId = string(result.data_id), gps = object(result.gps_coordinates);
@@ -74,7 +83,7 @@ export async function POST(request: NextRequest) {
           ...(typeof gps.longitude === "number" ? { longitude: gps.longitude } : {}) }] : [];
       });
       if (results.length && !targets.length) throw new ScanError("SerpAPI no devolvió identificadores de los locales. No se avanzó la búsqueda");
-      await scanMutation(convex, "saveSearch", { lease, targets, hasNext: Boolean(string(object(data.serpapi_pagination).next)) });
+      await scanMutation(convex, "saveSearch", { lease, targets, hasNext: work.offset < (discoveryQueries.length - 1) * 20 });
     } else if (work.kind === "reviews") {
       const target = work.target;
       activeTargetId = target._id as Id<"restaurantScanTargets">;
