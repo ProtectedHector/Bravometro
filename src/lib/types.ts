@@ -57,7 +57,7 @@ export interface Place {
   image?: string;
   status: "demo" | "published" | "draft";
   productType: ProductType;
-  scores: Pick<DishScores, "overall"> & Partial<Omit<DishScores, "overall">>;
+  scores: Pick<DishScores, "overall"> & Partial<Omit<DishScores, "overall">> & { presentation?: number; originality?: number };
   automaticScore?: number;
   automaticEvidenceCount?: number;
   automaticComplete?: boolean;

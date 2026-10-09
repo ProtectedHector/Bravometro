@@ -12,3 +12,7 @@ Este repositorio contiene el MVP web mobile-first de Bravómetro. La aplicación
 6. Inicia `npm run dev` y crea establecimientos reales en `/es/admin`.
 
 La familia de metros comparte `ProductType`, establecimientos, puntuaciones, fuentes y metodología. Solo `bravas` está activo; el resto son placeholders “En la cocina…”.
+
+## Escáner automático de bravas
+
+La configuración, límites de consumo, criterio de parada, retries, recuperación y puntuación de los diez aspectos están documentados en [`escanear-restaurantes.md`](escanear-restaurantes.md). El plan territorial y las condiciones del piloto están en [`plan-catalogo-distritos.md`](plan-catalogo-distritos.md).

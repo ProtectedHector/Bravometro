@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, type QueryCtx, type MutationCtx } from "./_generated/server";
 import { SCAN_AREAS, SCANNER_USER_ID, SCANNER_VERSION } from "./scanPlan";
-import { REVIEW_LIMIT, reviewLimitReached } from "./scanLimits";
+import { MAX_REVIEW_PAGES, REVIEW_LIMIT, SCORE_ATTRIBUTES, serpapiQuotaState, sufficientEvidence } from "./scanLimits";
 
 async function permitted(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -18,14 +18,22 @@ async function state(ctx: QueryCtx | MutationCtx) {
   return ctx.db.query("restaurantScans").withIndex("by_key", query => query.eq("key", SCANNER_VERSION)).unique();
 }
 
+function serpapiQuota(scan: NonNullable<Awaited<ReturnType<typeof state>>>) {
+  return serpapiQuotaState({ now: Date.now(), hourStartedAt: scan.serpapiHourStartedAt, hourRequests: scan.serpapiHourRequests,
+    monthStartedAt: scan.serpapiMonthStartedAt, monthRequests: scan.serpapiMonthRequests });
+}
+
 export const status = query({
   args: {},
   handler: async ctx => {
     if (!await permitted(ctx)) return { allowed: false };
     const scan = await state(ctx);
+    const quota = scan ? serpapiQuota(scan) : undefined;
     return { allowed: true, area: SCAN_AREAS[scan?.areaIndex ?? 0] ?? "Finalizado", finished: scan?.finished ?? false,
       checked: scan?.checked ?? 0, imported: scan?.imported ?? 0, reviewPages: scan?.reviewPages ?? 0,
-      requests: scan?.requests ?? 0, error: scan?.error ?? null };
+      requests: scan?.requests ?? 0, serpapiHourRequests: quota?.hourRequests ?? 0, serpapiMonthRequests: quota?.monthRequests ?? 0,
+      serpapiPausedUntil: quota && !quota.allowed ? quota.pausedUntil : null, serpapiPauseReason: quota && !quota.allowed ? quota.pauseReason : null,
+      error: scan?.error ?? null };
   },
 });
 
@@ -41,6 +49,14 @@ export const acquire = mutation({
     }
     if (scan.finished) return { kind: "finished" as const };
     if ((scan.leaseUntil ?? 0) > Date.now()) return { kind: "busy" as const };
+    const quota = serpapiQuota(scan);
+    if (!quota.allowed) {
+      await ctx.db.patch("restaurantScans", scan._id, { serpapiHourStartedAt: quota.hourStartedAt, serpapiHourRequests: quota.hourRequests,
+        serpapiMonthStartedAt: quota.monthStartedAt, serpapiMonthRequests: quota.monthRequests, serpapiPausedUntil: quota.pausedUntil,
+        serpapiPauseReason: quota.pauseReason, error: quota.pauseReason === "monthly" ? "Cuota mensual de SerpAPI agotada" : "Límite horario de SerpAPI alcanzado",
+        lease: undefined, leaseUntil: undefined, updatedAt: Date.now() });
+      return { kind: "paused" as const, pausedUntil: quota.pausedUntil, pauseReason: quota.pauseReason };
+    }
     let target = await ctx.db.query("restaurantScanTargets").withIndex("by_areaIndex_and_status", query => query.eq("areaIndex", scan.areaIndex).eq("status", "pending")).first();
     if (target && target.reviewCount === undefined) {
       const pages = await ctx.db.query("restaurantScanPages").withIndex("by_targetId_and_page", query => query.eq("targetId", target!._id)).take(REVIEW_LIMIT / 20);
@@ -48,7 +64,7 @@ export const acquire = mutation({
       await ctx.db.patch("restaurantScanTargets", target._id, { reviewCount });
       target = { ...target, reviewCount };
     }
-    if (target && reviewLimitReached(target.reviewCount ?? 0, target.mentionCount)) {
+    if (target && (target.reviewCount ?? 0) >= REVIEW_LIMIT) {
       await ctx.db.patch("restaurantScanTargets", target._id, { status: "complete", nextPage: undefined, limitReached: true, updatedAt: Date.now() });
       await ctx.db.patch("restaurantScans", scan._id, { checked: scan.checked + 1, lease: undefined, leaseUntil: undefined, error: undefined, updatedAt: Date.now() });
       return { kind: "advance" as const };
@@ -73,21 +89,35 @@ async function owned(ctx: MutationCtx, lease: string) {
 }
 
 export const reserveRequest = mutation({
-  args: { lease: v.string() },
-  handler: async (ctx, { lease }) => {
+  args: { lease: v.string(), targetId: v.optional(v.id("restaurantScanTargets")) },
+  handler: async (ctx, { lease, targetId }) => {
     const scan = await owned(ctx, lease);
-    await ctx.db.patch("restaurantScans", scan._id, { requests: scan.requests + 1 });
+    const quota = serpapiQuota(scan);
+    if (!quota.allowed) {
+      await ctx.db.patch("restaurantScans", scan._id, { serpapiHourStartedAt: quota.hourStartedAt, serpapiHourRequests: quota.hourRequests,
+        serpapiMonthStartedAt: quota.monthStartedAt, serpapiMonthRequests: quota.monthRequests, serpapiPausedUntil: quota.pausedUntil,
+        serpapiPauseReason: quota.pauseReason, error: quota.pauseReason === "monthly" ? "Cuota mensual de SerpAPI agotada" : "Límite horario de SerpAPI alcanzado",
+        lease: undefined, leaseUntil: undefined, updatedAt: Date.now() });
+      throw new Error(quota.pauseReason === "monthly" ? "Cuota mensual de SerpAPI agotada" : "Límite horario de SerpAPI alcanzado");
+    }
+    await ctx.db.patch("restaurantScans", scan._id, { requests: scan.requests + 1, serpapiHourStartedAt: quota.hourStartedAt,
+      serpapiHourRequests: quota.hourRequests + 1, serpapiMonthStartedAt: quota.monthStartedAt, serpapiMonthRequests: quota.monthRequests + 1,
+      serpapiPausedUntil: undefined, serpapiPauseReason: undefined });
+    if (targetId) {
+      const target = await ctx.db.get("restaurantScanTargets", targetId);
+      if (target) await ctx.db.patch("restaurantScanTargets", targetId, { serpRequests: (target.serpRequests ?? 0) + 1, updatedAt: Date.now() });
+    }
   },
 });
 
 export const saveSearch = mutation({
-  args: { lease: v.string(), targets: v.array(v.object({ externalId: v.string(), dataId: v.string() })), hasNext: v.boolean() },
+  args: { lease: v.string(), targets: v.array(v.object({ externalId: v.string(), dataId: v.string(), name: v.optional(v.string()), address: v.optional(v.string()), latitude: v.optional(v.number()), longitude: v.optional(v.number()) })), hasNext: v.boolean() },
   handler: async (ctx, { lease, targets, hasNext }) => {
     const scan = await owned(ctx, lease);
     for (const target of targets.slice(0, 20)) {
       const existing = await ctx.db.query("restaurantScanTargets").withIndex("by_externalId", query => query.eq("externalId", target.externalId)).unique();
       if (!existing) await ctx.db.insert("restaurantScanTargets", { ...target, areaIndex: scan.areaIndex, status: "pending",
-        mentionCount: 0, evidenceCount: 0, reviewCount: 0, totals: {}, weights: {}, updatedAt: Date.now() });
+        mentionCount: 0, evidenceCount: 0, reviewCount: 0, serpRequests: 0, totals: {}, weights: {}, updatedAt: Date.now() });
     }
     await ctx.db.patch("restaurantScans", scan._id, { searchOffset: scan.searchOffset + 20,
       searchComplete: !hasNext || scan.searchOffset >= 100, lease: undefined, leaseUntil: undefined, updatedAt: Date.now() });
@@ -113,16 +143,18 @@ export const saveReviews = mutation({
     }
     const mentionCount = target.mentionCount + args.mentionCount;
     const reviewCount = (target.reviewCount ?? 0) + args.reviewCount;
-    const limitReached = Boolean(args.nextPage) && reviewLimitReached(reviewCount, mentionCount);
-    const nextPage = limitReached ? undefined : args.nextPage;
     const evidenceCount = target.evidenceCount + args.evidenceCount;
     const totals = { ...target.totals }, weights = { ...target.weights };
-    for (const key of ["overall", "potato", "sauce", "spiciness", "taste", "texture", "quantity", "value"]) {
+    for (const key of SCORE_ATTRIBUTES) {
       const total = args.totals[key] ?? 0, weight = args.weights[key] ?? 0;
       if (!Number.isFinite(total) || !Number.isFinite(weight) || weight < 0 || weight > args.evidenceCount || total < 0 || total > 10 * weight + 1e-9) throw new Error("Puntuación automática inválida");
       totals[key] = (totals[key] ?? 0) + total;
       weights[key] = (weights[key] ?? 0) + weight;
     }
+    const priorPages = await ctx.db.query("restaurantScanPages").withIndex("by_targetId_and_page", query => query.eq("targetId", target._id)).take(MAX_REVIEW_PAGES);
+    const enough = sufficientEvidence(evidenceCount, weights);
+    const limitReached = priorPages.length + 1 >= MAX_REVIEW_PAGES || reviewCount >= REVIEW_LIMIT;
+    const nextPage = enough || limitReached ? undefined : args.nextPage;
     let placeId = target.placeId;
     let imported = false;
     if (mentionCount > 0 && !placeId) {
@@ -140,28 +172,39 @@ export const saveReviews = mutation({
       }
       imported = true;
     }
-    if (placeId && weights.overall > 0) {
-      const scores = Object.fromEntries(Object.keys(weights).filter(key => weights[key] > 0).map(key => [key, Math.round(totals[key] / weights[key] * 10) / 10]));
+    if (placeId) {
+      const scores = Object.fromEntries(SCORE_ATTRIBUTES.map(key => [key, weights[key] > 0 ? Math.round(totals[key] / weights[key] * 10) / 10 : 5]));
+      const coveredAttributes = SCORE_ATTRIBUTES.filter(key => weights[key] > 0).length;
       const rating = { placeId, overallScore: scores.overall, scores, evidenceCount,
-        confidenceScore: Math.min(70, Math.round(Math.min(evidenceCount / 20, 1) * 70 * weights.overall / evidenceCount)),
-        analyzedAt: Date.now(), methodologyVersion: SCANNER_VERSION, complete: !args.nextPage };
+        confidenceScore: evidenceCount ? Math.min(70, Math.round(Math.min(evidenceCount / 20, 1) * 70 * Math.min(weights.overall ?? 0, evidenceCount) / evidenceCount)) : 0,
+        coveredAttributes, neutralAttributes: SCORE_ATTRIBUTES.length - coveredAttributes,
+        analyzedAt: Date.now(), methodologyVersion: SCANNER_VERSION, complete: !nextPage };
       const existing = await ctx.db.query("automaticRatings").withIndex("by_placeId", query => query.eq("placeId", placeId!)).unique();
       if (existing) await ctx.db.patch("automaticRatings", existing._id, rating);
       else await ctx.db.insert("automaticRatings", rating);
     }
     await ctx.db.insert("restaurantScanPages", { targetId: target._id, page, reviewCount: args.reviewCount });
     await ctx.db.patch("restaurantScanTargets", target._id, { placeId, nextPage, reviewCount, limitReached,
-      status: nextPage ? "pending" : "complete", mentionCount, evidenceCount, totals, weights, updatedAt: Date.now() });
+      status: nextPage ? "pending" : "complete", mentionCount, evidenceCount, totals, weights, lastError: undefined, updatedAt: Date.now() });
     await ctx.db.patch("restaurantScans", scan._id, { checked: scan.checked + (nextPage ? 0 : 1), imported: scan.imported + (imported ? 1 : 0),
       reviewPages: scan.reviewPages + 1, lease: undefined, leaseUntil: undefined, updatedAt: Date.now() });
   },
 });
 
 export const fail = mutation({
-  args: { lease: v.string(), error: v.string() },
-  handler: async (ctx, { lease, error }) => {
+  args: { lease: v.string(), error: v.string(), targetId: v.optional(v.id("restaurantScanTargets")), skipTarget: v.optional(v.boolean()) },
+  handler: async (ctx, { lease, error, targetId, skipTarget }) => {
     await authorize(ctx);
     const scan = await state(ctx);
-    if (scan?.lease === lease) await ctx.db.patch("restaurantScans", scan._id, { error: error.slice(0, 500), lease: undefined, leaseUntil: undefined, updatedAt: Date.now() });
+    if (scan?.lease !== lease) return;
+    if (targetId && skipTarget) {
+      const target = await ctx.db.get("restaurantScanTargets", targetId);
+      if (target?.status === "pending") {
+        await ctx.db.patch("restaurantScanTargets", targetId, { status: "complete", nextPage: undefined, failed: true, lastError: error.slice(0, 500), updatedAt: Date.now() });
+        await ctx.db.patch("restaurantScans", scan._id, { checked: scan.checked + 1, error: `Local omitido: ${error}`.slice(0, 500), lease: undefined, leaseUntil: undefined, updatedAt: Date.now() });
+        return;
+      }
+    }
+    await ctx.db.patch("restaurantScans", scan._id, { error: error.slice(0, 500), lease: undefined, leaseUntil: undefined, updatedAt: Date.now() });
   },
 });

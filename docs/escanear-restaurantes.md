@@ -14,15 +14,106 @@ La suscripción Google AI Pro y la facturación de Gemini Developer API no son e
 
 - Orden definido en `convex/scanPlan.ts`: Ensanche, Casco Histórico de Vallecas y Santa Eugenia (Villa de Vallecas), Hortaleza, Centro y después los distritos del plan municipal.
 - Descubrimiento SerpAPI, seis páginas como máximo por zona (offsets 0–100, recomendación del proveedor). Búsqueda textual de restaurantes españoles y bravas; no confirma límites administrativos ni incluye todos los restaurantes de una ciudad. Los barrios restantes se buscan a nivel distrito.
-- Por local, recorre las páginas disponibles de reseñas sin filtro de palabra en el proveedor. Al alcanzar 500 reseñas examinadas y tener al menos una mención al plato confirmada por Gemini, pasa al siguiente local. Sin menciones confirmadas, continúa; si la primera aparece después de 500, termina en esa página. Solo los textos con la palabra completa «bravas» pasan a Gemini; este confirma que hablan del plato y distingue menciones sin opinión. «No las probé» no crea una nota. Una mención real permite crear el local; sin juicio evaluable queda fuera del ranking puntuado.
-- El contador de reseñas y el motivo de cierre por límite se guardan en Convex. Las notas de un escaneo cortado conservan la etiqueta de análisis parcial. Para locales ya en curso sin contador histórico, se estima conservadoramente hasta 20 reseñas por página guardada (hasta 25 páginas); pueden terminar algo antes de 500. Si ya cumplen el límite y tienen menciones, reanudar los cierra sin otra consulta externa.
-- La cola solo guarda identificadores del local, zona y estado. No se guarda nombre/dirección hasta confirmar una mención al plato. Entonces se solicitan los detalles y se vincula el Place ID existente o se crea el local.
+- Por local solicita primero una sola página de hasta 20 reseñas. Gemini decide cuáles hablan realmente de las bravas y cuáles aportan evidencia útil. Con unas 5 reseñas útiles y cobertura de al menos 6 de los 10 aspectos se detiene inmediatamente. Si las primeras opiniones son demasiado genéricas puede solicitar como máximo dos páginas adicionales (60 reseñas en total). Esto evita la antigua exploración de hasta 500 reseñas.
+- El contador de reseñas, consultas y el motivo de cierre se guardan en Convex. El escáner usa la metodología `bravas-gemini-2.0`; las ejecuciones interrumpidas se reanudan desde la siguiente página no confirmada.
+- La cola guarda identificadores, zona, estado y, cuando SerpAPI ya los ofrece durante el descubrimiento, nombre, dirección y coordenadas. Al confirmar una mención se reutilizan esos datos para vincular el Place ID existente o crear el local. Solo se hace una consulta de detalle adicional si faltan nombre o dirección.
 - Reseñas y salida de Gemini se procesan en memoria; solo se persisten acumulados numéricos, número de evidencias, puntuaciones, confianza y datos del local. No se guardan autores, fotos, textos, citas ni resúmenes de esas reseñas. No se escriben en `reviewEvidence`.
-- Gemini usa una rúbrica continua; redondeo a un decimal al presentar/persistir el agregado, sin aleatoriedad. Atributos desconocidos se muestran «—». Nota IA separada de las manuales; con una manual aprobada, IA pesa 20%, con cinco aproximadamente 4,8%. Las notas editoriales existentes conservan prioridad sobre el agregado comunitario, como antes.
-- Convex conserva local/página, detecta tokens de paginación repetidos y evita importar de nuevo el mismo Place ID entre zonas. Un bloqueo temporal impide pasos simultáneos entre pestañas. Las páginas confirmadas se guardan atómicamente con sus acumulados. Una página fallida sigue pendiente y reanudar puede repetir llamadas externas; no se garantiza exactamente una llamada al proveedor ante fallos.
+- Gemini usa una rúbrica continua para los 10 aspectos: calidad general, patata, salsa, textura, sabor, picante, cantidad, calidad/precio, presentación y originalidad. El agregado se redondea a un decimal. Cuando no hay evidencia para un aspecto se persiste el valor neutral 5, nunca `null` o `NaN`; la cobertura real se guarda por separado. Nota IA separada de las manuales; con una manual aprobada, IA pesa 20%, con cinco aproximadamente 4,8%.
+- Convex conserva local/página, detecta tokens de paginación repetidos y evita importar de nuevo el mismo Place ID entre zonas. Un lease de 120 segundos impide pasos simultáneos entre pestañas. Las páginas confirmadas se guardan atómicamente con sus acumulados. Si el proceso se interrumpe antes de confirmar la página, el lease caduca y esa página queda disponible para reanudación; la llamada externa puede repetirse.
 - Deduplicación de reseñas dentro de cada página en memoria. Google puede cambiar su orden entre peticiones; no se garantiza ausencia absoluta de solapamiento de reseñas entre páginas sin almacenar identificadores, que este diseño evita.
-- El botón trabaja en pasos cortos, hasta 200 por sesión, y se puede pausar. Mantén la pestaña abierta; cerrar detiene nuevos pasos. Reanudar conserva progreso. Sin reintentos automáticos cuando SerpAPI/Gemini devuelve error de cuota, límite o timeout: se muestra el error y queda guardado en Convex.
-- El contador de consultas registra intentos SerpAPI de este escáner (incluyendo detalles), no el saldo real del proveedor. Cada página adicional puede consumir consultas. No hay escaneo real ejecutado por configurar el código.
+- El botón trabaja en pasos cortos, hasta 200 por sesión, y se puede pausar. Mantén la pestaña abierta; cerrar detiene nuevos pasos. Reanudar conserva progreso. SerpAPI y Gemini tienen timeout, hasta 3 intentos con backoff exponencial para fallos temporales y un límite total por local.
+- Tras agotar los retries de un error asociado a un restaurante, se registra el error, se marca ese local como fallido y el lote continúa automáticamente. Los errores globales de autenticación, permisos o cuota (`401`, `403` y `429`) pausan el lote para evitar consumo o fallos repetidos.
+- El contador registra consultas lógicas de SerpAPI globales y por restaurante, no el saldo real del proveedor ni cada retry HTTP interno. Las recuperaciones del archivo de una búsqueda que SerpAPI deje en estado `Queued` o `Processing` tampoco se contabilizan como una nueva búsqueda. Consulta el panel de SerpAPI para contrastar el consumo facturable real.
+- Los logs indican inicio y duración de SerpAPI/Gemini, reseñas obtenidas, reseñas útiles, cobertura y motivo de parada. No incluyen claves ni textos de reseñas. No hay escaneo real ejecutado por configurar el código.
+
+## Límites operativos
+
+| Concepto | Límite actual | Comportamiento |
+|---|---:|---|
+| Descubrimiento por zona | 6 consultas | Offsets `0`, `20`, `40`, `60`, `80` y `100`; se detiene antes si no hay siguiente página. |
+| Resultados guardados por consulta de descubrimiento | 20 | Se deduplican globalmente por Place ID. |
+| Reseñas solicitadas por página | Hasta 20 | La última página puede pedir menos para respetar el máximo total. |
+| Objetivo de reseñas útiles | 5 | No basta con cinco menciones genéricas: deben aportar señales puntuables. |
+| Cobertura mínima para parar | 6 de 10 aspectos | Se cuenta un aspecto cuando Gemini marca evidencia directa o indirecta razonable. |
+| Páginas de reseñas por restaurante | Máximo 3 | Hasta 60 reseñas examinadas; no existe paginación indefinida. |
+| Consulta de detalle | 0 normalmente; máximo 1 | Solo cuando el descubrimiento no aportó nombre o dirección. |
+| Timeout SerpAPI por intento | 15 segundos | Hasta 3 intentos para errores temporales. |
+| Timeout Gemini por intento | 20 segundos | Hasta 3 intentos para errores temporales. |
+| Backoff | 0,5 s y 1 s | Espera exponencial antes del segundo y tercer intento. |
+| Espera del navegador por paso | 115 segundos | Si vence, se informa y el progreso confirmado permanece guardado. |
+| Lease de Convex | 120 segundos | Evita dos pasos simultáneos y permite recuperar ejecuciones interrumpidas. |
+| Pasos por pulsación | Máximo 200 | El usuario puede pausar después del paso en curso y reanudar posteriormente. |
+
+### Criterio exacto de parada
+
+Después de cada página se suman las reseñas útiles y la cobertura acumulada del restaurante:
+
+1. Si hay al menos 5 reseñas útiles y evidencia para 6 o más aspectos, se detiene SerpAPI inmediatamente.
+2. Si no hay evidencia suficiente pero existe otra página, se solicita una página adicional.
+3. Al llegar a 3 páginas o 60 reseñas se detiene aunque la cobertura siga siendo baja; los aspectos sin evidencia reciben el valor neutral `5` y se conserva por separado el número de aspectos cubiertos.
+4. Si SerpAPI no ofrece otra página, se finaliza con la evidencia disponible.
+
+Una reseña útil debe describir concretamente uno o más aspectos de las bravas. Una opinión genérica del restaurante, las estrellas generales, el servicio o el ambiente no cuentan como evidencia del plato.
+
+## Puntuaciones y valores neutrales
+
+Los diez campos siempre terminan con un número finito entre `0` y `10`: calidad general (`overall`), patata, salsa, textura, sabor, picante, cantidad, calidad/precio, presentación y originalidad. Gemini devuelve además una marca de evidencia por campo. Los campos sin evidencia reciben `5`, pero ese neutral no incrementa su peso ni se presenta internamente como evidencia observada.
+
+Las puntuaciones con evidencia se agregan ponderadas por la confianza de Gemini y se redondean una sola vez a un decimal. Picante mide intensidad, no si el picante es bueno o malo. No se usan estrellas generales del restaurante para calcular las bravas.
+
+## Despliegue y comprobación
+
+Los cambios de límites incluyen esquema y funciones de Convex. Después de actualizar el código hay que ejecutar:
+
+```bash
+npm test
+npm run typecheck
+npm run lint
+npm run build
+npx convex deploy
+```
+
+Antes de lanzar un lote grande, realiza un piloto pequeño y contrasta el contador interno con el panel de SerpAPI. Comprueba especialmente un restaurante con reseñas descriptivas, otro con opiniones genéricas, respuestas incompletas, errores temporales y una interrupción seguida de reanudación.
+
+## Acceso a los logs
+
+### Desarrollo local
+
+Inicia la aplicación desde una terminal:
+
+```bash
+npm run dev
+```
+
+Después ejecuta el escáner desde `/es/bravas`. Los logs de SerpAPI y Gemini aparecen en esa misma terminal porque se generan en la ruta de servidor `/api/restaurants/scan`.
+
+Ejemplo:
+
+```text
+[Bravómetro] restaurante-id → SerpAPI iniciado (consulta 1)
+[Bravómetro] restaurante-id → SerpAPI OK (2.3s), 20 reseñas obtenidas
+[Bravómetro] restaurante-id → Gemini iniciado
+[Bravómetro] restaurante-id → Gemini OK (4.8s), 7 reseñas útiles, 8/10 aspectos con evidencia, suficiente evidencia → STOP SerpAPI
+```
+
+### Producción en Vercel
+
+1. Abre el proyecto Bravómetro en Vercel.
+2. Entra en **Logs**.
+3. Filtra por la ruta `/api/restaurants/scan`.
+4. Busca el prefijo `[Bravómetro]` para aislar los eventos del escáner.
+
+Los logs muestran tiempos, consultas, número de reseñas, evidencia y errores, pero no deben mostrar claves ni textos completos de reseñas.
+
+### Convex
+
+En el dashboard del proyecto Convex, abre **Logs** y filtra por `restaurantScanner`. Aquí se pueden diagnosticar problemas de autenticación, validación, leases y persistencia.
+
+El estado persistido incluye los contadores globales, las consultas por restaurante y el último error de un restaurante fallido. El panel administrativo de `/es/bravas` muestra un resumen global, pero no sustituye los logs técnicos.
+
+### Consumo real de SerpAPI
+
+Consulta el dashboard de SerpAPI para comprobar el consumo facturable real. El contador interno de Bravómetro registra consultas lógicas iniciadas por el escáner; no cuenta necesariamente cada retry HTTP ni las recuperaciones de búsquedas en estado `Queued` o `Processing`.
 
 ## Condiciones y privacidad
 
