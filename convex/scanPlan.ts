@@ -7,4 +7,4 @@ export const SCAN_AREAS = [
 ] as const;
 
 export const SCANNER_USER_ID = "jx72bkvz217bgnwv4g3pvvywh98fq64v";
-export const SCANNER_VERSION = "bravas-gemini-2.0";
+export const SCANNER_VERSION = "bravas-gemini-2.1";

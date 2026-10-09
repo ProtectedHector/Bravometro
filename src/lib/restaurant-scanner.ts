@@ -1,7 +1,12 @@
 import "server-only";
+export { relevantReviews } from "./review-text";
 
 export class ScanError extends Error {
-  constructor(message: string, public status = 502) { super(message); }
+  status: number;
+  constructor(message: string, status = 502) {
+    super(message);
+    this.status = status;
+  }
 }
 
 export function scannerFailure(error: unknown, operation = "acceso") {
@@ -103,19 +108,6 @@ export function reviewPage(data: JsonObject, continued: boolean) {
     return { data: { ...data, reviews: [] }, nextPage: "" };
   }
   throw new ScanError(`SerpAPI devolvió una respuesta sin reviews; no es un error de cuota.${reference} ${continued ? "Página de continuación" : "Primera página"}; estado ${status || "desconocido"}. Revisa esta consulta en Searches; el local sigue pendiente`);
-}
-
-export function relevantReviews(data: JsonObject) {
-  const reviews = Array.isArray(data.reviews) ? data.reviews : [];
-  const seen = new Set<string>();
-  return reviews.flatMap(value => {
-    const review = object(value);
-    const text = string(object(review.extracted_snippet).original) || string(review.snippet);
-    const key = string(review.review_id) || text;
-    if (!text.trim() || seen.has(key)) return [];
-    seen.add(key);
-    return [text];
-  });
 }
 
 export function hasEnoughEvidence(evidenceCount: number, weights: Record<string, number>) {
