@@ -17,6 +17,7 @@ const discoveryQueries = [
   (area: string) => `bravas ${area} Madrid`,
   (area: string) => `bares de tapas con bravas ${area} Madrid`,
   (area: string) => `raciones bravas ${area} Madrid`,
+  (area: string) => `bravioli ${area} Madrid`,
   (area: string) => `bar bravas ${area} Madrid`,
   (area: string) => `restaurante bravas ${area} Madrid`,
 ] as const;
@@ -89,8 +90,8 @@ export async function POST(request: NextRequest) {
       activeTargetId = target._id as Id<"restaurantScanTargets">;
       const startedAt = Date.now();
       console.info(`[Bravómetro] ${target.externalId} → SerpAPI iniciado (consulta ${(target.serpRequests ?? 0) + 1})`);
-      const data = await fetchSerp({ engine: "google_maps_reviews", data_id: target.dataId, sort_by: "newestFirst", num: String(reviewPageSize(target.reviewCount ?? 0)),
-        ...(target.nextPage ? { next_page_token: target.nextPage } : {}) }, target._id as Id<"restaurantScanTargets">);
+      const data = await fetchSerp({ engine: "google_maps_reviews", data_id: target.dataId, sort_by: "newestFirst",
+        ...(target.nextPage ? { next_page_token: target.nextPage, num: String(reviewPageSize(target.reviewCount ?? 0)) } : {}) }, target._id as Id<"restaurantScanTargets">);
       const page = reviewPage(data, Boolean(target.nextPage));
       const reviewCount = Array.isArray(page.data.reviews) ? page.data.reviews.length : 0;
       const reviews = relevantReviews(page.data);

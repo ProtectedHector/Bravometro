@@ -13,9 +13,9 @@ La suscripción Google AI Pro y la facturación de Gemini Developer API no son e
 ## Funcionamiento
 
 - Orden definido en `convex/scanPlan.ts`: Ensanche, Casco Histórico de Vallecas y Santa Eugenia (Villa de Vallecas), Hortaleza, Centro y después los distritos del plan municipal.
-- Descubrimiento SerpAPI, seis consultas como máximo por zona, priorizadas por `patatas bravas`, `bravas`, tapas/raciones y bares de bravas. No confirma límites administrativos ni incluye todos los restaurantes de una ciudad. Los barrios restantes se buscan a nivel distrito.
+- Descubrimiento SerpAPI, siete consultas como máximo por zona, priorizadas por `patatas bravas`, `bravas`, tapas/raciones, `bravioli` y bares de bravas. No confirma límites administrativos ni incluye todos los restaurantes de una ciudad. Los barrios restantes se buscan a nivel distrito.
 - Por local solicita primero una sola página de hasta 20 reseñas. Gemini decide cuáles hablan realmente de las bravas y cuáles aportan evidencia útil. Con unas 5 reseñas útiles y cobertura de al menos 6 de los 10 aspectos se detiene inmediatamente. Si las primeras opiniones son demasiado genéricas puede solicitar como máximo dos páginas adicionales (60 reseñas en total). Esto evita la antigua exploración de hasta 500 reseñas.
-- El contador de reseñas, consultas y el motivo de cierre se guardan en Convex. El escáner usa la metodología `bravas-gemini-2.1`; las ejecuciones interrumpidas se reanudan desde la siguiente página no confirmada.
+- El contador de reseñas, consultas y el motivo de cierre se guardan en Convex. El escáner usa la metodología `bravas-gemini-2.3`; las ejecuciones interrumpidas se reanudan desde la siguiente página no confirmada.
 - La cola guarda identificadores, zona, estado y, cuando SerpAPI ya los ofrece durante el descubrimiento, nombre, dirección y coordenadas. Al confirmar una mención se reutilizan esos datos para vincular el Place ID existente o crear el local. Solo se hace una consulta de detalle adicional si faltan nombre o dirección.
 - Reseñas y salida de Gemini se procesan en memoria; solo se persisten acumulados numéricos, número de evidencias, puntuaciones, confianza y datos del local. No se guardan autores, fotos, textos, citas ni resúmenes de esas reseñas. No se escriben en `reviewEvidence`.
 - Gemini usa una rúbrica continua para los 10 aspectos: calidad general, patata, salsa, textura, sabor, picante, cantidad, calidad/precio, presentación y originalidad. El agregado se redondea a un decimal. Cuando no hay evidencia para un aspecto se persiste el valor neutral 5, nunca `null` o `NaN`; la cobertura real se guarda por separado. Nota IA separada de las manuales; con una manual aprobada, IA pesa 20%, con cinco aproximadamente 4,8%.
@@ -30,9 +30,9 @@ La suscripción Google AI Pro y la facturación de Gemini Developer API no son e
 
 | Concepto | Límite actual | Comportamiento |
 |---|---:|---|
-| Descubrimiento por zona | 6 consultas | Seis búsquedas textuales orientadas a bravas/tapas; se deduplican por Place ID. |
+| Descubrimiento por zona | 7 consultas | Siete búsquedas textuales orientadas a bravas/tapas/bravioli; se deduplican por Place ID. |
 | Resultados guardados por consulta de descubrimiento | 20 | Se deduplican globalmente por Place ID. |
-| Reseñas solicitadas por página | Hasta 20 | La última página puede pedir menos para respetar el máximo total. |
+| Reseñas solicitadas por página | 8 en la primera; hasta 20 en continuaciones | SerpAPI no acepta `num` en la primera página de `google_maps_reviews`; la última continuación puede pedir menos para respetar el máximo total. |
 | Objetivo de reseñas útiles | 5 | No basta con cinco menciones genéricas: deben aportar señales puntuables. |
 | Cobertura mínima para parar | 6 de 10 aspectos | Se cuenta un aspecto cuando Gemini marca evidencia directa o indirecta razonable. |
 | Páginas de reseñas por restaurante | Máximo 3 | Hasta 60 reseñas examinadas; no existe paginación indefinida. |

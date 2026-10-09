@@ -89,7 +89,7 @@ export async function serp(parameters: Record<string, string>) {
   if (response.status === 429 || /quota|limit|run out|exceed|credit|searches.*left/i.test(providerError)) {
     throw new ScanError("Cuota de SerpAPI agotada o límite de peticiones alcanzado. Escaneo pausado; revisa tu cuota antes de reanudar", 429);
   }
-  if (!response.ok) throw new ScanError(`SerpAPI devolvió un error HTTP ${response.status}. Revisa la clave y el plan`);
+  if (!response.ok) throw new ScanError(`SerpAPI devolvió HTTP ${response.status}${providerError ? `: ${providerError}` : ". Revisa la clave, parámetros y plan"}`);
   if (providerError && !/hasn't returned any results|no results/i.test(providerError)) throw new ScanError("SerpAPI no pudo completar la búsqueda. Avance conservado; revisa el proveedor");
   return data;
 }

@@ -1,6 +1,6 @@
 # Plan de catálogo inicial y puntuación de bravas por distritos
 
-Fecha: 8 de octubre de 2026. Estado: Fase 1 actualizada a `bravas-gemini-2.1`, pendiente de desplegar Convex y validar con un piloto controlado; actualizar el código no ejecuta búsquedas ni importaciones.
+Fecha: 8 de octubre de 2026. Estado: Fase 1 actualizada a `bravas-gemini-2.3`, pendiente de desplegar Convex y validar con un piloto controlado; actualizar el código no ejecuta búsquedas ni importaciones.
 
 ## Implementación del piloto
 
@@ -27,7 +27,7 @@ Esta decisión reduce la retención de contenido; no acredita que se hayan evita
 
 Usar distritos como unidades de trabajo y barrios como sublotes. Ensanche de Vallecas es un barrio de Villa de Vallecas, no un distrito adicional. El primer distrito comprende Ensanche de Vallecas, Casco Histórico de Vallecas y Santa Eugenia; empezar por Ensanche.
 
-Para descubrimiento autorizado, comenzar con «patatas bravas Ensanche de Vallecas Madrid», «bravas Villa de Vallecas Madrid» y «bares de tapas con bravas [barrio] Madrid». Complementar con restaurantes españoles; no imponer esa categoría en todas las consultas, porque excluiría bares y otros locales con bravas. Una consulta textual no garantiza pertenencia administrativa. Confirmarla con direcciones de una fuente autorizada o revisión editorial. Si se usan polígonos municipales, cruzarlos únicamente con coordenadas cuyo origen y licencia permitan ese análisis: las condiciones generales de Google restringen usar coordenadas de Places para point-in-polygon.
+Para descubrimiento autorizado, comenzar con «patatas bravas Ensanche de Vallecas Madrid», «bravas Villa de Vallecas Madrid», «bares de tapas con bravas [barrio] Madrid» y «bravioli [barrio] Madrid». Complementar con restaurantes españoles; no imponer esa categoría en todas las consultas, porque excluiría bares y otros locales con bravas. Una consulta textual no garantiza pertenencia administrativa. Confirmarla con direcciones de una fuente autorizada o revisión editorial. Si se usan polígonos municipales, cruzarlos únicamente con coordenadas cuyo origen y licencia permitan ese análisis: las condiciones generales de Google restringen usar coordenadas de Places para point-in-polygon.
 
 No multiplicar cuadrículas o consultas para eludir límites ni convertir Places en una exportación masiva. El registro territorial debe distinguir locales descubiertos, pertenencia confirmada y cobertura pendiente.
 
