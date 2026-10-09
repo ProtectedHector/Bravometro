@@ -208,3 +208,36 @@ export const fail = mutation({
     await ctx.db.patch("restaurantScans", scan._id, { error: error.slice(0, 500), lease: undefined, leaseUntil: undefined, updatedAt: Date.now() });
   },
 });
+
+export const resetFrom = mutation({
+  args: { adminToken: v.string(), from: v.number() },
+  handler: async (ctx, { adminToken, from }) => {
+    if (!process.env.BRAVOMETRO_ADMIN_TOKEN || adminToken !== process.env.BRAVOMETRO_ADMIN_TOKEN) throw new Error("Unauthorized");
+    if (!Number.isFinite(from) || from < 0) throw new Error("Invalid reset timestamp");
+    let pagesDeleted = 0, targetsDeleted = 0, scansDeleted = 0;
+    const targets = await ctx.db.query("restaurantScanTargets").collect();
+    for (const target of targets) {
+      if (target._creationTime < from) continue;
+      const pages = await ctx.db.query("restaurantScanPages").withIndex("by_targetId_and_page", query => query.eq("targetId", target._id)).collect();
+      for (const page of pages) {
+        await ctx.db.delete(page._id);
+        pagesDeleted++;
+      }
+      await ctx.db.delete(target._id);
+      targetsDeleted++;
+    }
+    const pages = await ctx.db.query("restaurantScanPages").collect();
+    for (const page of pages) {
+      if (page._creationTime < from) continue;
+      await ctx.db.delete(page._id);
+      pagesDeleted++;
+    }
+    const scans = await ctx.db.query("restaurantScans").collect();
+    for (const scan of scans) {
+      if (scan._creationTime < from) continue;
+      await ctx.db.delete(scan._id);
+      scansDeleted++;
+    }
+    return { scansDeleted, targetsDeleted, pagesDeleted };
+  },
+});
