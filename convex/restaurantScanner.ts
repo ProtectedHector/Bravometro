@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query, type QueryCtx, type MutationCtx } from "./_generated/server";
 import { SCAN_AREAS, SCANNER_USER_ID, SCANNER_VERSION } from "./scanPlan";
 import { MAX_REVIEW_PAGES, REVIEW_LIMIT, SCORE_ATTRIBUTES, serpapiQuotaState, sufficientEvidence } from "./scanLimits";
+import { overallFromScores } from "./ratingMath";
 
 async function permitted(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -174,6 +175,15 @@ export const saveReviews = mutation({
     }
     if (placeId) {
       const scores = Object.fromEntries(SCORE_ATTRIBUTES.map(key => [key, weights[key] > 0 ? Math.round(totals[key] / weights[key] * 10) / 10 : 5]));
+      scores.overall = overallFromScores({
+        potato: scores.potato,
+        sauce: scores.sauce,
+        spiciness: scores.spiciness,
+        taste: scores.taste,
+        texture: scores.texture,
+        quantity: scores.quantity,
+        value: scores.value,
+      });
       const coveredAttributes = SCORE_ATTRIBUTES.filter(key => weights[key] > 0).length;
       const rating = { placeId, overallScore: scores.overall, scores, evidenceCount,
         confidenceScore: evidenceCount ? Math.min(70, Math.round(Math.min(evidenceCount / 20, 1) * 70 * Math.min(weights.overall ?? 0, evidenceCount) / evidenceCount)) : 0,
