@@ -1,6 +1,6 @@
 # Plan de catálogo inicial y puntuación de bravas por distritos
 
-Fecha: 6 de octubre de 2026. Estado: escáner implementado, pendiente de configurar Gemini/JWT y desplegar; ninguna búsqueda ni importación ejecutada por esta configuración.
+Fecha: 8 de octubre de 2026. Estado: Fase 1 actualizada a `bravas-gemini-2.0`, pendiente de desplegar Convex y validar con un piloto controlado; actualizar el código no ejecuta búsquedas ni importaciones.
 
 ## Implementación del piloto
 
@@ -39,7 +39,7 @@ No multiplicar cuadrículas o consultas para eludir límites ni convertir Places
 4. Deduplicar globalmente por Place ID cuando exista; las sucursales distintas permanecen separadas. Vincular a establecimientos existentes y no sobrescribir sus notas manuales.
 5. Obtener reseñas solo de una fuente que autorice acceso y creación de notas derivadas. Solicitar detalles una vez por local y ejecución, sin repetirlos por cada consulta que lo descubrió. Procesar el texto en memoria durante el análisis y descartarlo al terminar; no incluirlo en base de datos, ficheros, cachés, colas, logs, trazas ni herramientas de observabilidad. Si se utiliza un proveedor de IA, comprobar también sus condiciones de retención, registro y entrenamiento: procesar en memoria en Bravómetro no garantiza que el proveedor no lo conserve.
 6. Detectar referencias explícitas al plato: «bravas», «patatas bravas» y variantes inequívocas. Resolver negaciones y excluir menciones a nombres de locales, «no las probé» o comentarios genéricos del restaurante.
-7. Puntuar solo atributos mencionados. Revisar una muestra editorial y los casos ambiguos antes de publicar; ante falta de evidencia, dejar la nota vacía.
+7. Puntuar los diez aspectos usando evidencia directa o indirecta razonable. Revisar una muestra editorial y los casos ambiguos antes de publicar; ante ausencia total de evidencia para un aspecto, aplicar el neutral técnico `5` y registrar que el aspecto no tuvo cobertura.
 8. Persistir solo puntuaciones y metadatos permitidos: local, fuente, cantidad de reseñas pertinentes, confianza, fecha, versión y estado del lote. No crear registros de texto o resúmenes en `reviewEvidence`. Deduplicar reseñas dentro de la ejecución en memoria, sin guardar identificadores de reseñas ni hashes como sustitutos del contenido. Guardar idempotencia por lote/local/versión; actualizar la estimación existente al repetir un análisis en vez de sumar la misma muestra como nueva evidencia. Reintentos limitados con espera para 429 y errores temporales.
 
 ## Nota automática y nota manual
@@ -65,15 +65,15 @@ Rúbrica inicial orientativa, pendiente de calibración editorial:
 
 El intervalo orienta, pero no asigna por sí solo una nota. Valorar los detalles explícitos: patata crujiente o blanda, salsa sabrosa o insípida, equilibrio, temperatura y relación calidad/precio cuando se mencionen. No penalizar atributos ausentes. «Muy picantes» indica intensidad, no calidad necesariamente. Una mera mención del plato sin juicio de calidad no genera puntuación.
 
-Para cada reseña distinta pertinente, obtener una nota global continua del plato y una confianza entre 0 y 1. La confianza mide claridad y especificidad, nunca si el sentimiento es positivo; las críticas negativas claras deben pesar igual que los elogios claros. Combinar con `automaticScore = suma(nota * confianza) / suma(confianza)`. Si no hay evidencia evaluable o la suma de pesos es cero, dejar la nota vacía. No contar varias frases de la misma reseña como votos independientes. Las notas por atributo se calculan solo con las reseñas que mencionen ese atributo.
+Para cada reseña distinta pertinente, obtener puntuaciones continuas y una confianza entre 0 y 1. La confianza mide claridad y especificidad, nunca si el sentimiento es positivo; las críticas negativas claras deben pesar igual que los elogios claros. Para cada aspecto con evidencia se combina `score = suma(nota * confianza) / suma(confianza)`. Si no hay evidencia evaluable o la suma de pesos es cero, el valor técnico es `5`, manteniendo peso cero y la cobertura separada. No contar varias frases de la misma reseña como votos independientes.
 
-Mantener la precisión durante el cálculo y redondear una sola vez al final a un decimal; presentar con formato español: **7,8; 4,9; 2,5; 7,3**. Estos números son ejemplos de formato, no notas de restaurantes reales ni una distribución que haya que forzar. No exigir que todos los locales tengan notas distintas y no completar campos sin evidencia con un 5 por defecto.
+Mantener la precisión durante el cálculo y redondear una sola vez al final a un decimal; presentar con formato español: **7,8; 4,9; 2,5; 7,3**. Estos números son ejemplos de formato, no notas de restaurantes reales ni una distribución que haya que forzar. No exigir que todos los locales tengan notas distintas. El `5` por ausencia de evidencia es un neutral explícito de la metodología 2.0 y debe distinguirse de una puntuación 5 sustentada por opiniones.
 
 Usar configuración estable del modelo y la misma rúbrica; no regenerar notas hasta obtener una distribución más bonita. Una nota decimal sigue siendo una estimación provisional, no una precisión objetiva. Con solo una mención, puede existir una nota decimal, pero su confianza será baja.
 
 Persistir la nota final, las notas de atributos disponibles y los metadatos mínimos autorizados. La justificación textual y el texto de entrada se descartan; una etiqueta fija como «Estimación automática provisional» no debe incorporar paráfrasis de reseñas.
 
-La nota automática basada en una sola mención se etiqueta como confianza baja. La confianza depende de cantidad de reseñas pertinentes, acuerdo, claridad y actualidad; nunca del número total de reseñas del local. No inventar atributos ausentes para satisfacer campos obligatorios del esquema actual.
+La nota automática basada en una sola mención se etiqueta como confianza baja. La confianza depende de cantidad de reseñas pertinentes, acuerdo, claridad y actualidad; nunca del número total de reseñas del local. Para los aspectos ausentes se usa `5` con peso cero y sin marcar evidencia; no se deducen detalles inexistentes para satisfacer el esquema.
 
 Preferencia: mostrar ambas notas separadas. Si se quiere una nota principal combinada, propuesta inicial:
 
@@ -118,7 +118,7 @@ Por lote registrar estado, barrio, consultas previstas/completadas, candidatos �
 
 Primer paso: resolver permisos y proveedor de reseñas; después un piloto pequeño de Ensanche de Vallecas. Comprobar que reejecutarlo no duplica datos, que cada puntuación tiene evidencia específica autorizada y que la nota manual prevalece. Completar Villa de Vallecas antes de Hortaleza; pasar a Centro tras revisar coste y calidad. No fijar un coste sin volumen y SKU: los campos solicitados afectan al precio y reseñas suelen requerir un nivel más caro.
 
-El proyecto ya dispone de `places`, `dishRatings`, `reviewEvidence`, `reviewSources` y `userRatings`. La implementación deberá revisar la procedencia, permisos y campos obligatorios de estas tablas. No reutilizar los campos de extractos, resúmenes o destacados para conservar contenido de reseñas. Los atributos automáticos sin evidencia deberán poder quedar vacíos; no inventar valores para satisfacer el esquema. El código local ya contempla notas editoriales o medias de valoraciones aprobadas de la comunidad; añadir la vía automática requerirá cambios explícitos y una etiqueta diferenciada. Mantener las valoraciones manuales pendientes fuera del ranking.
+El proyecto dispone de `places`, `dishRatings`, `reviewEvidence`, `reviewSources`, `userRatings` y `automaticRatings`. No reutilizar extractos, resúmenes o destacados para conservar contenido de reseñas. `automaticRatings` guarda los diez valores, número de evidencias, cobertura, neutrales, confianza, fecha y versión metodológica; no guarda textos. Las notas editoriales y medias aprobadas de la comunidad conservan prioridad. Mantener las valoraciones manuales pendientes fuera del ranking.
 
 ## Fuentes verificadas
 

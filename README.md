@@ -20,7 +20,8 @@ El alta de sitios y las valoraciones requieren inicio de sesión social con Cler
 - `npm run build`: build de producción.
 - `npm run lint`: ESLint.
 - `npm run typecheck`: TypeScript estricto.
+- `npm test`: tests de límites, cobertura y parada anticipada del escáner.
 - `npm run convex:dev`: desarrollo Convex y generación de tipos.
 - `npm run convex:deploy`: despliegue Convex.
 
-Los perfiles demo no representan establecimientos ni críticas reales. Consulta [`docs/README.md`](docs/README.md) para el recorrido completo.
+Los perfiles demo no representan establecimientos ni críticas reales. Consulta [`docs/README.md`](docs/README.md) para el recorrido completo y [`docs/escanear-restaurantes.md`](docs/escanear-restaurantes.md) para los límites exactos de SerpAPI/Gemini, reintentos, reanudación y puntuación automática.
