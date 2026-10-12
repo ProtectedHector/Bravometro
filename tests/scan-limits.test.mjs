@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MAX_REVIEW_PAGES, REVIEW_LIMIT, SCORE_ATTRIBUTES, SERPAPI_HOURLY_LIMIT, SERPAPI_MONTHLY_LIMIT, reviewPageSize, serpapiNextHourStart, serpapiNextMonthStart, serpapiQuotaState, sufficientEvidence } from "../convex/scanLimits.ts";
+import { automaticOverallFromScores } from "../convex/ratingMath.ts";
 
 test("the automatic rating always defines the ten requested aspects", () => {
   assert.deepEqual(SCORE_ATTRIBUTES, ["overall", "potato", "sauce", "texture", "taste", "spiciness", "quantity", "value", "presentation", "originality"]);
@@ -24,6 +25,18 @@ test("the hard cap prevents unbounded review pagination", () => {
 
 test("invalid and missing weights never count as evidence", () => {
   assert.equal(sufficientEvidence(9, { overall: 1, potato: Number.NaN, sauce: 0 }), false);
+});
+
+test("neutral automatic attributes do not inflate the overall score", () => {
+  assert.equal(automaticOverallFromScores({ potato: 5, sauce: 5, spiciness: 5, taste: 5, texture: 5, quantity: 5, value: 5 }, {}), 5);
+});
+
+test("sparse automatic evidence is pulled back toward neutral", () => {
+  assert.equal(automaticOverallFromScores({ potato: 5, sauce: 10, spiciness: 5, taste: 5, texture: 5, quantity: 5, value: 5 }, { sauce: 1 }), 6.2);
+});
+
+test("complete exceptional automatic evidence can still reach the top score", () => {
+  assert.equal(automaticOverallFromScores({ potato: 10, sauce: 10, spiciness: 10, taste: 10, texture: 10, quantity: 10, value: 10 }, { potato: 1, sauce: 1, spiciness: 1, taste: 1, texture: 1, quantity: 1, value: 1 }), 10);
 });
 
 test("SerpAPI quota pauses at the hourly window and resumes next hour", () => {

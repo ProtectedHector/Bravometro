@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
           ...(typeof gps.longitude === "number" ? { longitude: gps.longitude } : {}) }] : [];
       });
       if (results.length && !targets.length) throw new ScanError("SerpAPI no devolvió identificadores de los locales. No se avanzó la búsqueda");
-      await scanMutation(convex, "saveSearch", { lease, targets, hasNext: work.offset < (discoveryQueries.length - 1) * 20 });
+      await scanMutation(convex, "saveSearch", { lease, targets, hasNext: work.offset + 20 < discoveryQueries.length * 20 });
     } else if (work.kind === "reviews") {
       const target = work.target;
       activeTargetId = target._id as Id<"restaurantScanTargets">;

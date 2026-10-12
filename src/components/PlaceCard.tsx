@@ -4,19 +4,27 @@ import { formatScore } from "@/lib/bravometro/scoring";
 import type { Dictionary } from "@/lib/i18n";
 import type { Locale, Place } from "@/lib/types";
 
+type ScoreBar = [string, number | undefined];
+
 export function PlaceCard({ place, locale, dictionary: d, rank }: { place: Place; locale: Locale; dictionary: Dictionary; rank?: number }) {
   const hasManualRating = (place.communityRatingCount ?? 0) > 0 || place.automaticScore === undefined;
-  const bars = [
+  const baseBars: ScoreBar[] = [
     [d.attributes.potato,place.scores.potato],
     [d.attributes.sauce,place.scores.sauce],
     [d.attributes.spiciness,place.scores.spiciness],
-    ...(hasManualRating ? [
+  ];
+  const expandedBars: ScoreBar[] = hasManualRating ? [
       [d.attributes.taste,place.scores.taste],
       [d.attributes.texture,place.scores.texture],
       [d.attributes.quantity,place.scores.quantity],
       [d.attributes.value,place.scores.value],
-    ] as const : []),
-  ] as const;
+    ] : [];
+  const bars = [...baseBars, ...expandedBars];
+  bars.sort((a,b)=>{
+    const aNeutral = a[1] === undefined || a[1] === 5;
+    const bNeutral = b[1] === undefined || b[1] === 5;
+    return Number(aNeutral) - Number(bNeutral);
+  });
   const reviewPhoto=place.communityPhotos?.[0];
   const cardImage=reviewPhoto?.url??place.image;
   return <Link href={`/${locale}/bravas/${place.slug}`} className="card place-card" aria-label={`${place.name}: ${formatScore(place.scores.overall, locale)}`}>
