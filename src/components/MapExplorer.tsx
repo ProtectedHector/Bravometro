@@ -22,6 +22,7 @@ export function MapExplorer({ places, votedPlaceIds, locale, dictionary: d, mapA
   const [selected,setSelected]=useState<MappablePlace|undefined>(mappablePlaces[0]);
   const [status,setStatus]=useState<"idle"|"ready"|"error">("idle");
   const [error,setError]=useState("");
+  const [mapReady,setMapReady]=useState(false);
   const containerRef=useRef<HTMLDivElement>(null);
   const mapRef=useRef<google.maps.Map|null>(null);
   const markersRef=useRef<google.maps.Marker[]>([]);
@@ -35,14 +36,15 @@ export function MapExplorer({ places, votedPlaceIds, locale, dictionary: d, mapA
       const{Map}=await google.maps.importLibrary("maps") as google.maps.MapsLibrary;
       if(!active||!containerRef.current)return;
       mapRef.current=new Map(containerRef.current,{center:{lat:40.4168,lng:-3.7038},zoom:12,...(mapId?{mapId}:{}),fullscreenControl:true,mapTypeControl:true,streetViewControl:true,zoomControl:true,gestureHandling:"greedy"});
+      setMapReady(true);
     }).catch(reason=>{if(active)setError(reason instanceof Error?reason.message:"Google Maps no se ha podido cargar")});
-    return()=>{active=false};
+    return()=>{active=false;setMapReady(false)};
   },[mapApiKey,mapId]);
   useEffect(()=>{
-    if(!mapRef.current||!mappablePlaces.length)return;
+    if(!mapReady||!mapRef.current||!mappablePlaces.length)return;
     let active=true;
     let infoWindow:google.maps.InfoWindow|undefined;
-    void Promise.resolve().then(()=>{
+    void google.maps.importLibrary("marker").then(()=>{
       if(!active||!mapRef.current||typeof google==="undefined")return;
       for(const marker of markersRef.current)marker.setMap(null);
       markersRef.current=[];
@@ -74,7 +76,7 @@ export function MapExplorer({ places, votedPlaceIds, locale, dictionary: d, mapA
       }
     }).catch(reason=>{if(active)setError(reason instanceof Error?reason.message:"Google Maps no se ha podido cargar")});
     return()=>{active=false;infoWindow?.close()};
-  },[mappablePlaces,activeSelected,locale,votedIds]);
+  },[mapReady,mappablePlaces,activeSelected,locale,votedIds]);
 
   function locate(){
     track("nearby_requested");
