@@ -12,6 +12,7 @@ import type * as admin from "../admin.js";
 import type * as contributions from "../contributions.js";
 import type * as placeImages from "../placeImages.js";
 import type * as places from "../places.js";
+import type * as ratingMath from "../ratingMath.js";
 import type * as restaurantScanner from "../restaurantScanner.js";
 import type * as scanLimits from "../scanLimits.js";
 import type * as scanPlan from "../scanPlan.js";
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   contributions: typeof contributions;
   placeImages: typeof placeImages;
   places: typeof places;
+  ratingMath: typeof ratingMath;
   restaurantScanner: typeof restaurantScanner;
   scanLimits: typeof scanLimits;
   scanPlan: typeof scanPlan;
