@@ -8,6 +8,16 @@ export type BravasAttributeScores = {
   value: number;
 };
 
+export const BRAVAS_SCORE_WEIGHTS: BravasAttributeScores = {
+  potato: 0.2,
+  sauce: 0.24,
+  spiciness: 0.1,
+  taste: 0.2,
+  texture: 0.1,
+  quantity: 0.07,
+  value: 0.09,
+};
+
 export const BRAVAS_SCORE_FIELDS = [
   "potatoScore",
   "sauceScore",
@@ -24,14 +34,27 @@ export function roundScore(value: number) {
 
 export function overallFromScores(scores: BravasAttributeScores) {
   return roundScore(
-    scores.potato * 0.2 +
-      scores.sauce * 0.24 +
-      scores.spiciness * 0.1 +
-      scores.taste * 0.2 +
-      scores.texture * 0.1 +
-      scores.quantity * 0.07 +
-      scores.value * 0.09,
+    scores.potato * BRAVAS_SCORE_WEIGHTS.potato +
+      scores.sauce * BRAVAS_SCORE_WEIGHTS.sauce +
+      scores.spiciness * BRAVAS_SCORE_WEIGHTS.spiciness +
+      scores.taste * BRAVAS_SCORE_WEIGHTS.taste +
+      scores.texture * BRAVAS_SCORE_WEIGHTS.texture +
+      scores.quantity * BRAVAS_SCORE_WEIGHTS.quantity +
+      scores.value * BRAVAS_SCORE_WEIGHTS.value,
   );
+}
+
+export function automaticOverallFromScores(scores: Partial<BravasAttributeScores>, evidenceWeights: Record<string, number> = {}) {
+  let weightedTotal = 0;
+  let coveredWeight = 0;
+  for (const [attribute, baseWeight] of Object.entries(BRAVAS_SCORE_WEIGHTS) as Array<[keyof BravasAttributeScores, number]>) {
+    if ((evidenceWeights[attribute] ?? 0) <= 0) continue;
+    weightedTotal += (scores[attribute] ?? 5) * baseWeight;
+    coveredWeight += baseWeight;
+  }
+  if (coveredWeight <= 0) return 5;
+  const evidencedAverage = weightedTotal / coveredWeight;
+  return roundScore(5 + (evidencedAverage - 5) * coveredWeight);
 }
 
 export function scoresFromRating(row: Record<(typeof BRAVAS_SCORE_FIELDS)[number], number>) {

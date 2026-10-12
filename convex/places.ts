@@ -1,7 +1,7 @@
 import { query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
-import { overallFromRating, overallFromScores, roundScore, scoresFromRating, type BravasAttributeScores } from "./ratingMath";
+import { automaticOverallFromScores, overallFromRating, overallFromScores, roundScore, scoresFromRating, type BravasAttributeScores } from "./ratingMath";
 
 function confidence(score: number) { return score >= 72 ? "high" : score >= 42 ? "medium" : "low"; }
 
@@ -24,7 +24,7 @@ async function present(ctx: QueryCtx, place: Doc<"places">) {
     communityScore = scores.overall;
   } else if (automatic) {
     Object.assign(scores, automatic.scores);
-    scores.overall = overallFromScores({
+    scores.overall = automaticOverallFromScores({
       potato: scores.potato ?? 5,
       sauce: scores.sauce ?? 5,
       spiciness: scores.spiciness ?? 5,
@@ -32,12 +32,12 @@ async function present(ctx: QueryCtx, place: Doc<"places">) {
       texture: scores.texture ?? 5,
       quantity: scores.quantity ?? 5,
       value: scores.value ?? 5,
-    });
+    }, automatic.scoreWeights ?? scores);
   }
   const confidenceScore = editorial?.confidenceScore ?? (community.length ? Math.round(Math.min(community.length / 40, 1) * 75 + 25 / 3) : automatic!.confidenceScore);
   const analyzedAt = editorial?.analyzedAt ?? (community.length ? Math.max(...community.map(row => row.updatedAt)) : automatic!.analyzedAt);
   const communityPhotos = (await Promise.all(community.filter(row => row.photoStorageId).map(async row => ({ url: await ctx.storage.getUrl(row.photoStorageId!), userName: row.userName, score: overallFromRating(row), comment: row.comment })))).filter(photo => photo.url);
-  const automaticScore = automatic ? overallFromScores({
+  const automaticScore = automatic ? automaticOverallFromScores({
     potato: automatic.scores.potato ?? 5,
     sauce: automatic.scores.sauce ?? 5,
     spiciness: automatic.scores.spiciness ?? 5,
@@ -45,7 +45,7 @@ async function present(ctx: QueryCtx, place: Doc<"places">) {
     texture: automatic.scores.texture ?? 5,
     quantity: automatic.scores.quantity ?? 5,
     value: automatic.scores.value ?? 5,
-  }) : undefined;
+  }, automatic.scoreWeights ?? automatic.scores) : undefined;
   return { id: place._id, name: place.name, slug: place.slug, city: place.city, country: place.country, neighborhood: place.neighborhood,
     address: place.address, latitude: place.latitude, longitude: place.longitude, website: place.website, phone: place.phone,
     googlePlaceId: place.externalPlaceId, googleMapsUrl: place.googleMapsUrl, source: place.source, verifiedAt: place.verifiedAt,
