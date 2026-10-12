@@ -3,7 +3,7 @@ import { useEffect,useRef,useState } from "react";
 import type { GooglePlaceCandidate } from "@/lib/types";
 
 let loader:Promise<void>|null=null;
-function loadGoogleMaps(apiKey:string){
+export function loadGoogleMaps(apiKey:string){
   if(typeof google!=="undefined"&&typeof google.maps?.importLibrary==="function")return Promise.resolve();
   if(loader)return loader;
   loader=new Promise<void>((resolve,reject)=>{

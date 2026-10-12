@@ -63,6 +63,16 @@ export const list = query({ args: {}, handler: async ctx => {
   const places = await ctx.db.query("places").filter(query => query.eq(query.field("status"), "published")).collect();
   return (await Promise.all(places.map(place => present(ctx, place)))).filter(Boolean);
 } });
+export const listMap = query({ args: {}, handler: async ctx => {
+  const places = await ctx.db.query("places").filter(query => query.eq(query.field("status"), "published")).collect();
+  const rows = [];
+  for (const place of places) {
+    const presented = await present(ctx, place);
+    rows.push({ id: place._id, name: place.name, slug: place.slug, city: place.city, neighborhood: place.neighborhood,
+      address: place.address, latitude: place.latitude, longitude: place.longitude, productType: "bravas", scores: { overall: presented?.scores.overall } });
+  }
+  return rows;
+} });
 export const bySlug = query({ args: { slug: v.string() }, handler: async (ctx, { slug }) => {
   const place = await ctx.db.query("places").withIndex("by_slug", query => query.eq("slug", slug)).unique();
   return place ? present(ctx, place) : null;

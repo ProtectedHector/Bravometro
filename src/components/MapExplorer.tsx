@@ -1,16 +1,96 @@
 "use client";
-import { useState } from "react";
+import { useEffect,useMemo,useRef,useState } from "react";
 import Link from "next/link";
 import { formatScore } from "@/lib/bravometro/scoring";
 import { track } from "@/lib/analytics";
+import { loadGoogleMaps } from "@/components/GooglePlacesMap";
 import type { Dictionary } from "@/lib/i18n";
-import type { Locale, Place } from "@/lib/types";
+import type { Locale, MapPlace } from "@/lib/types";
 
-export function MapExplorer({ places, locale, dictionary: d }: { places: Place[]; locale: Locale; dictionary: Dictionary }) {
-  const [selected,setSelected]=useState(places[0]); const [status,setStatus]=useState<"idle"|"ready"|"error">("idle");
-  function locate(){track("nearby_requested");if(!navigator.geolocation){setStatus("error");return}navigator.geolocation.getCurrentPosition(()=>setStatus("ready"),()=>setStatus("error"),{enableHighAccuracy:false,timeout:6000})}
+type MappablePlace = MapPlace & { latitude: number; longitude: number };
+
+function markerIcon(label:string,color:string,selected:boolean):google.maps.Icon{
+  const width=selected?68:58;
+  const height=selected?78:68;
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 58 68"><path d="M29 65C21 52 5 40 5 24 5 11 16 2 29 2s24 9 24 22c0 16-16 28-24 41Z" fill="${color}" stroke="#fff" stroke-width="4"/><text x="29" y="30" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-family="Arial, sans-serif" font-size="${label.length>3?14:17}" font-weight="900">${label}</text></svg>`;
+  return {url:`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,scaledSize:new google.maps.Size(width,height),anchor:new google.maps.Point(width/2,height-3)};
+}
+
+export function MapExplorer({ places, votedPlaceIds, locale, dictionary: d, mapApiKey, mapId }: { places: MapPlace[]; votedPlaceIds: string[]; locale: Locale; dictionary: Dictionary; mapApiKey?: string; mapId?: string }) {
+  const mappablePlaces=useMemo(()=>places.filter((place):place is MappablePlace=>typeof place.latitude==="number"&&typeof place.longitude==="number"),[places]);
+  const votedIds=useMemo(()=>new Set(votedPlaceIds),[votedPlaceIds]);
+  const [selected,setSelected]=useState<MappablePlace|undefined>(mappablePlaces[0]);
+  const [status,setStatus]=useState<"idle"|"ready"|"error">("idle");
+  const [error,setError]=useState("");
+  const containerRef=useRef<HTMLDivElement>(null);
+  const mapRef=useRef<google.maps.Map|null>(null);
+  const markersRef=useRef<google.maps.Marker[]>([]);
+  const userMarkerRef=useRef<google.maps.Marker|null>(null);
+  const activeSelected=selected&&mappablePlaces.some(place=>place.id===selected.id)?selected:mappablePlaces[0];
+
+  useEffect(()=>{
+    if(!mapApiKey||!containerRef.current)return;
+    let active=true;
+    void loadGoogleMaps(mapApiKey).then(async()=>{
+      const{Map}=await google.maps.importLibrary("maps") as google.maps.MapsLibrary;
+      if(!active||!containerRef.current)return;
+      mapRef.current=new Map(containerRef.current,{center:{lat:40.4168,lng:-3.7038},zoom:12,...(mapId?{mapId}:{}),fullscreenControl:true,mapTypeControl:true,streetViewControl:true,zoomControl:true,gestureHandling:"greedy"});
+    }).catch(reason=>{if(active)setError(reason instanceof Error?reason.message:"Google Maps no se ha podido cargar")});
+    return()=>{active=false};
+  },[mapApiKey,mapId]);
+  useEffect(()=>{
+    if(!mapRef.current||!mappablePlaces.length)return;
+    let active=true;
+    let infoWindow:google.maps.InfoWindow|undefined;
+    void Promise.resolve().then(()=>{
+      if(!active||!mapRef.current||typeof google==="undefined")return;
+      for(const marker of markersRef.current)marker.setMap(null);
+      markersRef.current=[];
+      infoWindow=new google.maps.InfoWindow();
+      const bounds=new google.maps.LatLngBounds();
+      for(const place of mappablePlaces){
+        const isSelected=place.id===activeSelected?.id;
+        const voted=votedIds.has(place.id);
+        const score=formatScore(place.scores.overall,locale);
+        const marker=new google.maps.Marker({map:mapRef.current,position:{lat:place.latitude,lng:place.longitude},title:place.name,icon:markerIcon(score,voted?"#178a4a":"#d83b19",isSelected),zIndex:isSelected?20:10});
+        const showDetails=()=>{
+          const content=document.createElement("div");
+          const name=document.createElement("strong");
+          name.textContent=place.name;
+          const address=document.createElement("p");
+          address.textContent=place.address;
+          content.append(name,address);
+          infoWindow?.setContent(content);
+          infoWindow?.open({map:mapRef.current,anchor:marker,shouldFocus:false});
+        };
+        marker.addListener("click",()=>{setSelected(place);showDetails()});
+        if(isSelected)showDetails();
+        markersRef.current.push(marker);
+        bounds.extend({lat:place.latitude,lng:place.longitude});
+      }
+      if(!bounds.isEmpty()){
+        mapRef.current.fitBounds(bounds,64);
+        if(mappablePlaces.length===1)google.maps.event.addListenerOnce(mapRef.current,"idle",()=>{if((mapRef.current?.getZoom()??0)>16)mapRef.current?.setZoom(16)});
+      }
+    }).catch(reason=>{if(active)setError(reason instanceof Error?reason.message:"Google Maps no se ha podido cargar")});
+    return()=>{active=false;infoWindow?.close()};
+  },[mappablePlaces,activeSelected,locale,votedIds]);
+
+  function locate(){
+    track("nearby_requested");
+    if(!navigator.geolocation){setStatus("error");return}
+    navigator.geolocation.getCurrentPosition(position=>{
+      setStatus("ready");
+      const location={lat:position.coords.latitude,lng:position.coords.longitude};
+      mapRef.current?.panTo(location);
+      mapRef.current?.setZoom(14);
+      if(!mapRef.current||typeof google==="undefined")return;
+      if(userMarkerRef.current)userMarkerRef.current.setMap(null);
+      userMarkerRef.current=new google.maps.Marker({map:mapRef.current,position:location,title:"Tu ubicación",label:{text:"●",color:"#ffffff",fontWeight:"900"},zIndex:30});
+    },()=>setStatus("error"),{enableHighAccuracy:false,timeout:6000});
+  }
+
+  if(!mapApiKey)return <div className="places-map places-map-unavailable">{d.contribute.mapSetup}</div>;
   return <><div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:16}}><button className="button" onClick={locate}>⌖ {d.actions.nearMe}</button>{status!=="idle"&&<span className="pill">{status==="ready"?d.map.locationReady:d.map.locationError}</span>}</div>
-  <div className="card map-board">{places.map((place,index)=><button key={place.id} className="map-pin" style={{left:`${28+index*23}%`,top:`${33+(index%2)*24}%`}} onClick={()=>setSelected(place)} aria-label={place.name}><span><b>{index+1}</b></span></button>)}
-    {selected&&<div className="card map-card"><span className="pill">{selected.neighborhood}</span><h2 style={{margin:"10px 0 4px"}}>{selected.name}</h2><strong style={{fontSize:"2rem",color:"var(--red)"}}>{formatScore(selected.scores.overall,locale)}</strong><p style={{color:"var(--muted)"}}>{selected.address}</p><Link className="button" href={`/${locale}/bravas/${selected.slug}`}>{d.actions.viewPlace} →</Link></div>}
-  </div></>;
+  <div className="bravas-map-shell">{error&&<div className="notice">{error}</div>}<div ref={containerRef} className="bravas-map" role="application" aria-label="Google Maps"/>{activeSelected&&<div className="card map-card"><span className="pill">{activeSelected.neighborhood}</span><h2 style={{margin:"10px 0 4px"}}>{activeSelected.name}</h2><strong style={{fontSize:"2rem",color:"var(--red)"}}>{formatScore(activeSelected.scores.overall,locale)}</strong><p style={{color:"var(--muted)"}}>{activeSelected.address}</p><Link className="button" href={`/${locale}/bravas/${activeSelected.slug}`}>{d.actions.viewPlace} →</Link></div>}</div></>;
 }

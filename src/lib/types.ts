@@ -73,6 +73,10 @@ export interface Place {
   communityPhotos?: Array<{url:string;userName:string;score:number;comment?:string}>;
 }
 
+export type MapPlace = Pick<Place,"id"|"name"|"slug"|"city"|"neighborhood"|"address"|"latitude"|"longitude"|"productType"> & {
+  scores: { overall?: number };
+};
+
 export interface GooglePlaceCandidate {
   googlePlaceId: string;
   name: string;
