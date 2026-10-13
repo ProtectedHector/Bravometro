@@ -224,10 +224,10 @@ export const resetFrom = mutation({
   handler: async (ctx, { adminToken, from }) => {
     if (!process.env.BRAVOMETRO_ADMIN_TOKEN || adminToken !== process.env.BRAVOMETRO_ADMIN_TOKEN) throw new Error("Unauthorized");
     if (!Number.isFinite(from) || from < 0) throw new Error("Invalid reset timestamp");
-    let pagesDeleted = 0, targetsDeleted = 0, scansDeleted = 0;
+    let pagesDeleted = 0, targetsDeleted = 0, scansDeleted = 0, scansReset = 0;
     const targets = await ctx.db.query("restaurantScanTargets").collect();
     for (const target of targets) {
-      if (target._creationTime < from) continue;
+      if (target._creationTime < from && target.updatedAt < from) continue;
       const pages = await ctx.db.query("restaurantScanPages").withIndex("by_targetId_and_page", query => query.eq("targetId", target._id)).collect();
       for (const page of pages) {
         await ctx.db.delete(page._id);
@@ -244,10 +244,15 @@ export const resetFrom = mutation({
     }
     const scans = await ctx.db.query("restaurantScans").collect();
     for (const scan of scans) {
-      if (scan._creationTime < from) continue;
-      await ctx.db.delete(scan._id);
-      scansDeleted++;
+      if (scan._creationTime >= from) {
+        await ctx.db.delete(scan._id);
+        scansDeleted++;
+      } else if (scan.updatedAt >= from) {
+        await ctx.db.patch(scan._id, { areaIndex: 0, searchOffset: 0, searchComplete: false, finished: false,
+          checked: 0, imported: 0, reviewPages: 0, requests: 0, error: undefined, lease: undefined, leaseUntil: undefined, updatedAt: Date.now() });
+        scansReset++;
+      }
     }
-    return { scansDeleted, targetsDeleted, pagesDeleted };
+    return { scansDeleted, scansReset, targetsDeleted, pagesDeleted };
   },
 });
