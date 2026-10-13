@@ -8,4 +8,23 @@ Se aceptan JPG, PNG, WebP y HEIC de hasta 15 MB, convertidos en el navegador a W
 
 La tabla `placeImages` guarda el archivo asociado al local, administrador creador/modificador y fechas. Al sustituir la imagen se elimina el archivo anterior. En las tarjetas se prioriza la foto de una reseña aprobada; si no existe, se usa la imagen del administrador. Esta imagen también se muestra en la ficha mientras no haya fotos de reseñas.
 
+## Migración entre despliegues
+
+Las tablas solo guardan referencias a Convex File Storage (`placeImages.storageId` y `userRatings.photoStorageId`). Si se migran datos sin storage, las referencias llegan a producción pero `ctx.storage.getUrl(...)` no puede resolver la imagen.
+
+Para clonar datos e imágenes desde dev a prod, exporta incluyendo storage:
+
+```bash
+npx convex export --include-file-storage --path /tmp/bravometro-dev-with-storage.zip
+npx convex import --prod --replace /tmp/bravometro-dev-with-storage.zip
+```
+
+Antes de reemplazar producción, crea un backup:
+
+```bash
+npx convex export --prod --include-file-storage --path /tmp/bravometro-prod-backup.zip
+```
+
+Convex no ofrece una opción oficial de "solo file storage" para completar una migración ya hecha. Si producción ya tiene datos nuevos que no se deben pisar, no uses `--replace`; prepara una migración específica que copie archivos y actualice solo los campos `storageId` afectados.
+
 Publica solo imágenes propias o con permiso de uso. Despliega el nuevo esquema y funciones con `npx convex deploy`, y después reconstruye Vercel. No se necesitan claves ni variables nuevas respecto al escáner.

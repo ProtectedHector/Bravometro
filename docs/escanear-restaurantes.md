@@ -15,7 +15,7 @@ La suscripción Google AI Pro y la facturación de Gemini Developer API no son e
 - Orden definido en `convex/scanPlan.ts`: Ensanche, Casco Histórico de Vallecas y Santa Eugenia (Villa de Vallecas), Hortaleza, Centro y después los distritos del plan municipal.
 - Descubrimiento SerpAPI, siete consultas como máximo por zona, priorizadas por `patatas bravas`, `bravas`, tapas/raciones, `bravioli` y bares de bravas. No confirma límites administrativos ni incluye todos los restaurantes de una ciudad. Los barrios restantes se buscan a nivel distrito.
 - Por local solicita primero una sola página de hasta 20 reseñas. Gemini decide cuáles hablan realmente de las bravas y cuáles aportan evidencia útil. Con unas 5 reseñas útiles y cobertura de al menos 6 de los 10 aspectos se detiene inmediatamente. Si las primeras opiniones son demasiado genéricas puede solicitar como máximo dos páginas adicionales (60 reseñas en total). Esto evita la antigua exploración de hasta 500 reseñas.
-- El contador de reseñas, consultas y el motivo de cierre se guardan en Convex. El escáner usa la metodología `bravas-gemini-2.3`; las ejecuciones interrumpidas se reanudan desde la siguiente página no confirmada.
+- El contador de reseñas, consultas y el motivo de cierre se guardan en Convex. El escáner usa la metodología `bravas-gemini-2.4`; las ejecuciones interrumpidas se reanudan desde la siguiente página no confirmada.
 - La cola guarda identificadores, zona, estado y, cuando SerpAPI ya los ofrece durante el descubrimiento, nombre, dirección y coordenadas. Al confirmar una mención se reutilizan esos datos para vincular el Place ID existente o crear el local. Solo se hace una consulta de detalle adicional si faltan nombre o dirección.
 - Reseñas y salida de Gemini se procesan en memoria; solo se persisten acumulados numéricos, número de evidencias, puntuaciones, confianza y datos del local. No se guardan autores, fotos, textos, citas ni resúmenes de esas reseñas. No se escriben en `reviewEvidence`.
 - Gemini usa una rúbrica continua para los 10 aspectos: calidad general, patata, salsa, textura, sabor, picante, cantidad, calidad/precio, presentación y originalidad. El agregado se redondea a un decimal. Cuando no hay evidencia para un aspecto se persiste el valor neutral 5, nunca `null` o `NaN`; la cobertura real se guarda por separado. Nota IA separada de las manuales; con una manual aprobada, IA pesa 20%, con cinco aproximadamente 4,8%.
@@ -74,6 +74,26 @@ npx convex deploy
 ```
 
 Antes de lanzar un lote grande, realiza un piloto pequeño y contrasta el contador interno con el panel de SerpAPI. Comprueba especialmente un restaurante con reseñas descriptivas, otro con opiniones genéricas, respuestas incompletas, errores temporales y una interrupción seguida de reanudación.
+
+## Reset operativo del escáner
+
+El escáner conserva estado en `restaurantScans`, `restaurantScanTargets` y `restaurantScanPages`. Si una ejecución queda contaminada por una clave, modelo o despliegue incorrectos, usa la mutation administrativa `restaurantScanner:resetFrom` con un timestamp Unix en milisegundos. Borra targets y páginas creados o actualizados desde ese corte; si un scan existente fue actualizado desde entonces, lo devuelve a inicio.
+
+Ejemplo para producción, cargando el token solo desde `.env.local`:
+
+```bash
+set -a
+source .env.local
+set +a
+npx convex run restaurantScanner:resetFrom "{\"adminToken\":\"$BRAVOMETRO_ADMIN_TOKEN\",\"from\":1791842400000}" --prod
+```
+
+Usa el inicio real de la ejecución si empezó justo antes de medianoche. Por ejemplo, un reset de "hoy" no elimina targets creados a las 23:42 del día anterior aunque pertenezcan al scan activo. Verifica después con:
+
+```bash
+npx convex data restaurantScans --prod --format json --limit 5
+npx convex data restaurantScanTargets --prod --format json --limit 10
+```
 
 ## Acceso a los logs
 
