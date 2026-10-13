@@ -8,6 +8,11 @@ function client(): ConvexHttpClient | null {
   return url ? new ConvexHttpClient(url) : null;
 }
 
+function logConvexFallback(label: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(`${label}: ${message.slice(0, 500)}`);
+}
+
 export async function getPlaces(): Promise<Place[]> {
   const convex = client();
   if (!convex) return demoPlaces;
@@ -18,7 +23,7 @@ export async function getPlaces(): Promise<Place[]> {
       {},
     );
   } catch (error) {
-    console.error("Convex unavailable; showing clearly labelled demo data.", error);
+    logConvexFallback("Convex unavailable; showing clearly labelled demo data", error);
     return demoPlaces;
   }
 }
@@ -33,7 +38,7 @@ export async function getMapPlaces(): Promise<MapPlace[]> {
       {},
     );
   } catch (error) {
-    console.error("Convex unavailable; falling back to map demo data.", error);
+    logConvexFallback("Convex unavailable; falling back to map demo data", error);
     return demoPlaces;
   }
 }
@@ -48,12 +53,12 @@ export async function getPlaceBySlug(slug: string): Promise<Place | null> {
       { slug },
     );
   } catch (error) {
-    console.error("Convex unavailable; falling back to demo data.", error);
+    logConvexFallback("Convex unavailable; falling back to demo data", error);
     return demoPlaces.find((place) => place.slug === slug) ?? null;
   }
 }
 
 export async function getPlaceOptions(): Promise<PlaceOption[]> {
   const convex=client();if(!convex)return demoPlaces.map(({id,name,neighborhood,city,status})=>({id,name,neighborhood,city,status}));
-  try{return await convex.query(makeFunctionReference<"query",Record<string,never>,PlaceOption[]>("places:listBasic"),{})}catch(error){console.error("Could not load place options",error);return []}
+  try{return await convex.query(makeFunctionReference<"query",Record<string,never>,PlaceOption[]>("places:listBasic"),{})}catch(error){logConvexFallback("Could not load place options",error);return []}
 }

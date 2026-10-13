@@ -15,6 +15,7 @@ export function scannerFailure(error: unknown, operation = "acceso") {
   if (/Could not find public function|FunctionNotFound/i.test(message)) return new ScanError(`Convex no tiene publicada la función del escáner (${operation}). Ejecuta npx convex deploy en Bravometro y comprueba que NEXT_PUBLIC_CONVEX_URL apunte a ese despliegue`, 503);
   if (/ArgumentValidationError|extra field|missing required field|does not match.*validator|schema validation/i.test(message)) return new ScanError(`El esquema o los argumentos de Convex no coinciden con esta versión del escáner (${operation}). Despliega Convex con npx convex deploy; el límite de 500 reseñas requiere el nuevo campo reviewCount`, 503);
   if (/No auth provider|InvalidAuth|Unauthenticated|JWT|token.*(expired|invalid)|issuer|audience/i.test(message)) return new ScanError(`Convex rechazó el JWT (${operation}). Comprueba la plantilla convex, audience convex y CLERK_JWT_ISSUER_DOMAIN del mismo entorno que las claves Clerk de Vercel`, 401);
+  if (message === "Error") return new ScanError(`Convex devolvió un error sin detalle durante ${operation}. La función existe, pero falló al ejecutarse; revisa los logs de Convex para esa llamada y confirma que Vercel apunta al mismo despliegue de NEXT_PUBLIC_CONVEX_URL`, 503);
   const publicMessages = [
     "No autorizado para escanear restaurantes",
     "El paso de escaneo ha caducado; vuelve a intentarlo",
