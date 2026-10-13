@@ -22,7 +22,7 @@ function statusFor(error:unknown){
   return 500;
 }
 
-export async function GET(request:NextRequest){
+export async function GET(){
   try{const{client,adminToken}=await adminClient();const queue=await client.query(makeFunctionReference<"query">("admin:listPending"),{adminToken});return NextResponse.json(queue,{headers:{"Cache-Control":"no-store"}})}catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Error interno"},{status:statusFor(error)})}
 }
 
