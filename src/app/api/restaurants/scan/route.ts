@@ -24,7 +24,10 @@ const discoveryQueries = [
 
 async function convexCall<Result>(operation: string, call: () => Promise<Result>): Promise<Result> {
   try { return await call(); }
-  catch (error) { throw scannerFailure(error, `restaurantScanner:${operation}`); }
+  catch (error) {
+    console.error("[Bravómetro] Convex scanner call failed", { operation, name: error instanceof Error ? error.name : typeof error, message: error instanceof Error ? error.message : String(error) });
+    throw scannerFailure(error, `restaurantScanner:${operation}`);
+  }
 }
 
 const scanStatus = (convex: ConvexHttpClient) => convexCall("status", () => convex.query(query, {}));
@@ -59,13 +62,26 @@ export async function POST(request: NextRequest) {
   let convex: ConvexHttpClient | undefined;
   let activeTargetId: Id<"restaurantScanTargets"> | undefined;
   const lease = crypto.randomUUID();
+  const finishFailure = async (error: unknown) => {
+    const normalized = scannerFailure(error);
+    const message = normalized.message;
+    const skipTarget = Boolean(activeTargetId) && ![401, 402, 403, 404, 429, 503].includes(normalized.status);
+    if (convex) try {
+      await scanMutation(convex, "fail", { lease, error: message, ...(activeTargetId ? { targetId: activeTargetId } : {}), ...(skipTarget ? { skipTarget: true } : {}) });
+      if (skipTarget) {
+        console.error(`[Bravómetro] ${activeTargetId} → ERROR tras retries → local omitido; continúa el lote`, error);
+        return NextResponse.json({ ...await scanStatus(convex), warning: message }, { headers: { "Cache-Control": "no-store" } });
+      }
+    } catch {}
+    return failure(error);
+  };
   try {
     convex = await client();
     const status = await scanStatus(convex);
-    if (!status.allowed) throw new ScanError("No autorizado", 403);
+    if (!status.allowed) return failure(new ScanError("No autorizado", 403));
     scannerConfiguration();
     const work = await scanMutation(convex, "acquire", { lease }) as Work;
-    if (work.kind === "busy") throw new ScanError("Ya hay un paso de escaneo en curso. Espera antes de reanudar", 409);
+    if (work.kind === "busy") return failure(new ScanError("Ya hay un paso de escaneo en curso. Espera antes de reanudar", 409));
     if (work.kind === "paused") return NextResponse.json(await scanStatus(convex), { headers: { "Cache-Control": "no-store" } });
     const fetchSerp = async (parameters: Record<string, string>, targetId?: Id<"restaurantScanTargets">) => {
       await scanMutation(convex!, "reserveRequest", { lease, ...(targetId ? { targetId } : {}) });
@@ -83,7 +99,7 @@ export async function POST(request: NextRequest) {
           ...(typeof gps.latitude === "number" ? { latitude: gps.latitude } : {}),
           ...(typeof gps.longitude === "number" ? { longitude: gps.longitude } : {}) }] : [];
       });
-      if (results.length && !targets.length) throw new ScanError("SerpAPI no devolvió identificadores de los locales. No se avanzó la búsqueda");
+      if (results.length && !targets.length) return finishFailure(new ScanError("SerpAPI no devolvió identificadores de los locales. No se avanzó la búsqueda"));
       await scanMutation(convex, "saveSearch", { lease, targets, hasNext: work.offset + 20 < discoveryQueries.length * 20 });
     } else if (work.kind === "reviews") {
       const target = work.target;
@@ -116,7 +132,7 @@ export async function POST(request: NextRequest) {
             ...(typeof gps.latitude === "number" ? { latitude: gps.latitude } : {}),
             ...(typeof gps.longitude === "number" ? { longitude: gps.longitude } : {}) };
         }
-        if (!place.name || !place.address) throw new ScanError("No se pudo recuperar el nombre y dirección del local con bravas");
+        if (!place.name || !place.address) return finishFailure(new ScanError("No se pudo recuperar el nombre y dirección del local con bravas"));
       }
       const nextPage = page.nextPage;
       await scanMutation(convex, "saveReviews", { lease, targetId: target._id as Id<"restaurantScanTargets">, reviewCount, ...analysis,
@@ -124,16 +140,6 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json(await scanStatus(convex), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    const normalized = scannerFailure(error);
-    const message = normalized.message;
-    const skipTarget = Boolean(activeTargetId) && ![401, 402, 403, 404, 429, 503].includes(normalized.status);
-    if (convex) try {
-      await scanMutation(convex, "fail", { lease, error: message, ...(activeTargetId ? { targetId: activeTargetId } : {}), ...(skipTarget ? { skipTarget: true } : {}) });
-      if (skipTarget) {
-        console.error(`[Bravómetro] ${activeTargetId} → ERROR tras retries → local omitido; continúa el lote`, error);
-        return NextResponse.json({ ...await scanStatus(convex), warning: message }, { headers: { "Cache-Control": "no-store" } });
-      }
-    } catch {}
-    return failure(error);
+    return finishFailure(error);
   }
 }

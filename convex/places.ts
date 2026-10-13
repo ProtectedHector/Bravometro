@@ -4,6 +4,7 @@ import type { Doc } from "./_generated/dataModel";
 import { automaticOverallFromScores, overallFromRating, overallFromScores, roundScore, scoresFromRating, type BravasAttributeScores } from "./ratingMath";
 
 function confidence(score: number) { return score >= 72 ? "high" : score >= 42 ? "medium" : "low"; }
+const numberOr = (value: unknown, fallback: number) => typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
 async function present(ctx: QueryCtx, place: Doc<"places">) {
   const adminImage = await ctx.db.query("placeImages").withIndex("by_placeId", query => query.eq("placeId", place._id)).unique();
@@ -34,8 +35,8 @@ async function present(ctx: QueryCtx, place: Doc<"places">) {
       value: scores.value ?? 5,
     }, automatic.scoreWeights ?? scores);
   }
-  const confidenceScore = editorial?.confidenceScore ?? (community.length ? Math.round(Math.min(community.length / 40, 1) * 75 + 25 / 3) : automatic!.confidenceScore);
-  const analyzedAt = editorial?.analyzedAt ?? (community.length ? Math.max(...community.map(row => row.updatedAt)) : automatic!.analyzedAt);
+  const confidenceScore = editorial?.confidenceScore ?? (community.length ? Math.round(Math.min(community.length / 40, 1) * 75 + 25 / 3) : numberOr(automatic?.confidenceScore, 0));
+  const analyzedAt = editorial?.analyzedAt ?? (community.length ? Math.max(...community.map(row => row.updatedAt)) : numberOr(automatic?.analyzedAt, place.updatedAt ?? place.createdAt));
   const communityPhotos = (await Promise.all(community.filter(row => row.photoStorageId).map(async row => ({ url: await ctx.storage.getUrl(row.photoStorageId!), userName: row.userName, score: overallFromRating(row), comment: row.comment })))).filter(photo => photo.url);
   const automaticScore = automatic ? automaticOverallFromScores({
     potato: automatic.scores.potato ?? 5,
@@ -50,11 +51,11 @@ async function present(ctx: QueryCtx, place: Doc<"places">) {
     address: place.address, latitude: place.latitude, longitude: place.longitude, website: place.website, phone: place.phone,
     googlePlaceId: place.externalPlaceId, googleMapsUrl: place.googleMapsUrl, source: place.source, verifiedAt: place.verifiedAt,
     priceLevel: place.priceLevel, image: adminImageUrl ?? place.image, status: place.status, productType: "bravas", scores,
-    confidence: confidence(confidenceScore), confidenceScore, evidenceCount: editorial?.evidenceCount ?? (community.length || automatic!.evidenceCount),
+    confidence: confidence(confidenceScore), confidenceScore, evidenceCount: editorial?.evidenceCount ?? (community.length || numberOr(automatic?.evidenceCount, 0)),
     summary: { es: editorial?.summaryEs ?? (community.length ? "Puntuación basada en valoraciones aprobadas de la comunidad de Bravómetro." : "Estimación automática provisional de las bravas. No es una valoración manual."),
       en: editorial?.summaryEn ?? (community.length ? "Score based on approved ratings from the Bravómetro community." : "Provisional automated bravas estimate. Not a manual rating.") },
     highlights: { es: editorial?.highlightsEs ?? [], en: editorial?.highlightsEn ?? [] },
-    methodologyVersion: editorial?.methodologyVersion ?? (community.length ? "community-1.0" : automatic!.methodologyVersion),
+    methodologyVersion: editorial?.methodologyVersion ?? (community.length ? "community-1.0" : automatic?.methodologyVersion ?? "automatic-unknown"),
     analyzedAt: new Date(analyzedAt).toISOString().slice(0, 10), communityScore, communityRatingCount: community.length, communityPhotos,
     automaticScore, automaticEvidenceCount: automatic?.evidenceCount, automaticComplete: automatic?.complete };
 }
