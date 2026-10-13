@@ -144,6 +144,7 @@ Cada score debe ser un número finito 0-10. Cuando no exista evidencia directa n
   if (response.status === 503) throw new ScanError(`Gemini (${model}) no está disponible temporalmente o está saturado (HTTP 503). Escaneo pausado y página pendiente. Espera un minuto y pulsa Escanear restaurantes para reanudar; este error no indica por sí solo una clave inválida ni falta de saldo`, 503);
   if (response.status >= 500) throw new ScanError(`Gemini (${model}) sufrió un error del servicio (HTTP ${response.status}). Escaneo pausado y página pendiente; vuelve a intentarlo más tarde`, response.status);
   if (response.status === 401 || response.status === 403) throw new ScanError("Gemini rechazó la autenticación o los permisos. Revisa GEMINI_API_KEY y las restricciones de la clave en AI Studio", response.status);
+  if (response.status === 402) throw new ScanError(`Gemini (${model}) requiere facturación o un tier con acceso a este modelo (HTTP 402). Escaneo pausado; revisa el proyecto de AI Studio/Cloud o cambia GEMINI_MODEL`, 402);
   if (response.status === 404) throw new ScanError(`Gemini no encuentra el modelo ${model} para esta API. Revisa GEMINI_MODEL y su disponibilidad en AI Studio`, 404);
   if (!response.ok) throw new ScanError(`Gemini devolvió HTTP ${response.status}. Revisa GEMINI_API_KEY, modelo y facturación`);
   let data: JsonObject;

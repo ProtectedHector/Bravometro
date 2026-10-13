@@ -90,8 +90,8 @@ export async function POST(request: NextRequest) {
       activeTargetId = target._id as Id<"restaurantScanTargets">;
       const startedAt = Date.now();
       console.info(`[Bravómetro] ${target.externalId} → SerpAPI iniciado (consulta ${(target.serpRequests ?? 0) + 1})`);
-      const data = await fetchSerp({ engine: "google_maps_reviews", data_id: target.dataId, sort_by: "newestFirst",
-        ...(target.nextPage ? { next_page_token: target.nextPage, num: String(reviewPageSize(target.reviewCount ?? 0)) } : {}) }, target._id as Id<"restaurantScanTargets">);
+      const data = await fetchSerp({ engine: "google_maps_reviews", data_id: target.dataId,
+        ...(target.nextPage ? { next_page_token: target.nextPage, num: String(reviewPageSize(target.reviewCount ?? 0)) } : { sort_by: "qualityScore" }) }, target._id as Id<"restaurantScanTargets">);
       const page = reviewPage(data, Boolean(target.nextPage));
       const reviewCount = Array.isArray(page.data.reviews) ? page.data.reviews.length : 0;
       const reviews = relevantReviews(page.data);
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const normalized = scannerFailure(error);
     const message = normalized.message;
-    const skipTarget = Boolean(activeTargetId) && ![401, 403, 429].includes(normalized.status);
+    const skipTarget = Boolean(activeTargetId) && ![401, 402, 403, 404, 429, 503].includes(normalized.status);
     if (convex) try {
       await scanMutation(convex, "fail", { lease, error: message, ...(activeTargetId ? { targetId: activeTargetId } : {}), ...(skipTarget ? { skipTarget: true } : {}) });
       if (skipTarget) {
