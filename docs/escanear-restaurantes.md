@@ -12,14 +12,15 @@ La suscripción Google AI Pro y la facturación de Gemini Developer API no son e
 
 ## Funcionamiento
 
-- Orden definido en `convex/scanPlan.ts`: Ensanche, Casco Histórico de Vallecas y Santa Eugenia (Villa de Vallecas), Hortaleza, Centro y después los distritos del plan municipal.
-- Descubrimiento SerpAPI, siete consultas como máximo por zona, priorizadas por `patatas bravas`, `bravas`, tapas/raciones, `bravioli` y bares de bravas. No confirma límites administrativos ni incluye todos los restaurantes de una ciudad. Los barrios restantes se buscan a nivel distrito.
+- Orden definido en `convex/scanPlan.ts`: conserva primero las 24 zonas históricas de Madrid para mantener compatibles los índices persistidos; continúa con los 178 municipios restantes de la Comunidad de Madrid (Móstoles y Alcorcón primero), los 542 de la Comunitat Valenciana (Alicante primero) y los 947 de Cataluña (Barcelona primero). La relación municipal procede del INE a 1 de enero de 2026 y está materializada en `convex/scanMunicipalities.ts`.
+- Descubrimiento SerpAPI, tres consultas como máximo por municipio y vuelta. La ubicación completa del municipio, provincia, comunidad y país se incluye en el texto; ya no se fuerzan las coordenadas de Madrid. No confirma por sí solo límites administrativos ni garantiza encontrar todos los restaurantes.
+- Cuando termina todo el plan, el botón cambia a «Iniciar nueva vuelta». Cada una de las tres primeras vueltas usa un grupo distinto de consultas; las siguientes rotan esos grupos. Los Place ID presentes en `restaurantScanTargets` o ya publicados en `places` se descartan antes de analizar reseñas, por lo que una nueva vuelta busca candidatos nuevos sin volver a registrar locales existentes.
 - Por local solicita primero una sola página de hasta 20 reseñas. Gemini decide cuáles hablan realmente de las bravas y cuáles aportan evidencia útil. Con unas 5 reseñas útiles y cobertura de al menos 6 de los 10 aspectos se detiene inmediatamente. Si las primeras opiniones son demasiado genéricas puede solicitar como máximo dos páginas adicionales (60 reseñas en total). Esto evita la antigua exploración de hasta 500 reseñas.
 - El contador de reseñas, consultas y el motivo de cierre se guardan en Convex. El escáner usa la metodología `bravas-gemini-2.4`; las ejecuciones interrumpidas se reanudan desde la siguiente página no confirmada.
 - La cola guarda identificadores, zona, estado y, cuando SerpAPI ya los ofrece durante el descubrimiento, nombre, dirección y coordenadas. Al confirmar una mención se reutilizan esos datos para vincular el Place ID existente o crear el local. Solo se hace una consulta de detalle adicional si faltan nombre o dirección.
 - Reseñas y salida de Gemini se procesan en memoria; solo se persisten acumulados numéricos, número de evidencias, puntuaciones, confianza y datos del local. No se guardan autores, fotos, textos, citas ni resúmenes de esas reseñas. No se escriben en `reviewEvidence`.
 - Gemini usa una rúbrica continua para los 10 aspectos: calidad general, patata, salsa, textura, sabor, picante, cantidad, calidad/precio, presentación y originalidad. El agregado se redondea a un decimal. Cuando no hay evidencia para un aspecto se persiste el valor neutral 5, nunca `null` o `NaN`; la cobertura real se guarda por separado. Nota IA separada de las manuales; con una manual aprobada, IA pesa 20%, con cinco aproximadamente 4,8%.
-- Convex conserva local/página, detecta tokens de paginación repetidos y evita importar de nuevo el mismo Place ID entre zonas. Un lease de 120 segundos impide pasos simultáneos entre pestañas. Las páginas confirmadas se guardan atómicamente con sus acumulados. Si el proceso se interrumpe antes de confirmar la página, el lease caduca y esa página queda disponible para reanudación; la llamada externa puede repetirse.
+- Convex conserva local/página, detecta tokens de paginación repetidos y evita importar de nuevo el mismo Place ID entre zonas, vueltas y municipios. También omite Place ID que ya existan en el catálogo aunque nunca hayan sido targets del escáner. Un lease de 120 segundos impide pasos simultáneos entre pestañas. Las páginas confirmadas se guardan atómicamente con sus acumulados. Si el proceso se interrumpe antes de confirmar la página, el lease caduca y esa página queda disponible para reanudación; la llamada externa puede repetirse.
 - Deduplicación de reseñas dentro de cada página en memoria. Google puede cambiar su orden entre peticiones; no se garantiza ausencia absoluta de solapamiento de reseñas entre páginas sin almacenar identificadores, que este diseño evita.
 - El botón trabaja en pasos cortos, hasta 200 por sesión, y se puede pausar. Mantén la pestaña abierta; cerrar detiene nuevos pasos. Reanudar conserva progreso. SerpAPI y Gemini tienen timeout, hasta 3 intentos con backoff exponencial para fallos temporales y un límite total por local.
 - Tras agotar los retries de un error asociado a un restaurante, se registra el error, se marca ese local como fallido y el lote continúa automáticamente. Los errores globales de autenticación, permisos o cuota (`401`, `403` y `429`) pausan el lote para evitar consumo o fallos repetidos.
@@ -30,7 +31,7 @@ La suscripción Google AI Pro y la facturación de Gemini Developer API no son e
 
 | Concepto | Límite actual | Comportamiento |
 |---|---:|---|
-| Descubrimiento por zona | 7 consultas | Siete búsquedas textuales orientadas a bravas/tapas/bravioli; se deduplican por Place ID. |
+| Descubrimiento por municipio y vuelta | 3 consultas | Tres búsquedas textuales; cada nueva vuelta rota a otro grupo y se deduplica globalmente por Place ID. |
 | Resultados guardados por consulta de descubrimiento | 20 | Se deduplican globalmente por Place ID. |
 | Reseñas solicitadas por página | 8 en la primera; hasta 20 en continuaciones | SerpAPI no acepta `num` en la primera página de `google_maps_reviews`; la última continuación puede pedir menos para respetar el máximo total. |
 | Objetivo de reseñas útiles | 5 | No basta con cinco menciones genéricas: deben aportar señales puntuables. |
@@ -42,7 +43,7 @@ La suscripción Google AI Pro y la facturación de Gemini Developer API no son e
 | Backoff | 0,5 s y 1 s | Espera exponencial antes del segundo y tercer intento. |
 | Espera del navegador por paso | 115 segundos | Si vence, se informa y el progreso confirmado permanece guardado. |
 | Lease de Convex | 120 segundos | Evita dos pasos simultáneos y permite recuperar ejecuciones interrumpidas. |
-| Pasos por pulsación | Máximo 200 | El usuario puede pausar después del paso en curso y reanudar posteriormente. |
+| Pasos por pulsación | Máximo 200 | Al terminar el lote, el botón queda disponible para continuar desde el punto guardado. |
 
 ### Criterio exacto de parada
 

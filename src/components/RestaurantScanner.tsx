@@ -5,6 +5,7 @@ import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 
 type Status = { allowed: boolean; ownerId?: string; area?: string; finished?: boolean; checked?: number; imported?: number;
+  round?: number;
   reviewPages?: number; requests?: number; serpapiHourRequests?: number; serpapiMonthRequests?: number;
   serpapiPausedUntil?: number | null; serpapiPauseReason?: "hourly" | "monthly" | null; error?: string | null };
 
@@ -57,7 +58,7 @@ export function RestaurantScanner() {
     setRunning(true);
     setError("");
     try {
-      while (active.current) {
+      for (let step = 0; active.current && step < 200; step += 1) {
         const response = await fetch("/api/restaurants/scan", { method: "POST", signal: AbortSignal.timeout(115000) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "No se pudo escanear");
@@ -79,11 +80,11 @@ export function RestaurantScanner() {
   if (!status.allowed || status.ownerId !== user?.id) return null;
   return <aside className="card content-card" style={{ marginBottom: 24 }}>
     <h2>Catálogo de bravas · administración</h2>
-    <p>Zona: <b>{status.area}</b> · {status.checked ?? 0} locales revisados · {status.imported ?? 0} con bravas · {status.reviewPages ?? 0} páginas de reseñas · {status.requests ?? 0} consultas SerpAPI.</p>
+    <p>Vuelta {(status.round ?? 0) + 1} · Zona: <b>{status.area}</b> · {status.checked ?? 0} locales revisados · {status.imported ?? 0} con bravas · {status.reviewPages ?? 0} páginas de reseñas · {status.requests ?? 0} consultas SerpAPI.</p>
     <p>SerpAPI: {status.serpapiHourRequests ?? 0}/2900 esta hora · {status.serpapiMonthRequests ?? 0}/15000 este mes.</p>
     <p>Solo se incorporan locales con menciones al plato. Las notas de IA son provisionales y pesan menos que las manuales. El progreso se guarda; no se guardan textos de reseñas.</p>
     <p><b>Comprueba que tus proyectos están en el nivel gratuito:</b> si tienen facturación activa, este botón puede generar cargos. Verifica también los permisos de análisis de reseñas y las condiciones de Gemini antes de iniciar.</p>
-    <button className="button" disabled={running || status.finished} onClick={scan}>{running ? "Escaneando…" : status.finished ? "Escaneo completado" : "Escanear restaurantes"}</button>
+    <button className="button" disabled={running} onClick={scan}>{running ? "Escaneando…" : status.finished ? "Iniciar nueva vuelta" : "Escanear restaurantes"}</button>
     {running && <button className="button ghost" style={{ marginLeft: 12 }} onClick={() => { active.current = false; }}>Pausar tras esta página</button>}
     <p role="status" aria-live="polite">{error || pauseLabel(status) || status.error || (running ? "No cierres esta página. Si se alcanza el límite horario de SerpAPI, esperará y continuará en la siguiente hora." : "Puedes reanudar desde el último paso guardado.")}</p>
   </aside>;

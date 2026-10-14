@@ -30,7 +30,9 @@ export const status = query({
     if (!await permitted(ctx)) return { allowed: false };
     const scan = await state(ctx);
     const quota = scan ? serpapiQuota(scan) : undefined;
-    return { allowed: true, area: SCAN_AREAS[scan?.areaIndex ?? 0] ?? "Finalizado", finished: scan?.finished ?? false,
+    const area = SCAN_AREAS[scan?.areaIndex ?? 0];
+    const finished = Boolean(scan?.finished && (scan?.areaIndex ?? 0) >= SCAN_AREAS.length);
+    return { allowed: true, area: area?.label ?? "Finalizado", finished, round: scan?.round ?? 0,
       checked: scan?.checked ?? 0, imported: scan?.imported ?? 0, reviewPages: scan?.reviewPages ?? 0,
       requests: scan?.requests ?? 0, serpapiHourRequests: quota?.hourRequests ?? 0, serpapiMonthRequests: quota?.monthRequests ?? 0,
       serpapiPausedUntil: quota && !quota.allowed ? quota.pausedUntil : null, serpapiPauseReason: quota && !quota.allowed ? quota.pauseReason : null,
@@ -44,11 +46,15 @@ export const acquire = mutation({
     await authorize(ctx);
     let scan = await state(ctx);
     if (!scan) {
-      const scanId = await ctx.db.insert("restaurantScans", { key: SCANNER_VERSION, areaIndex: 0, searchOffset: 0,
+      const scanId = await ctx.db.insert("restaurantScans", { key: SCANNER_VERSION, round: 0, areaIndex: 0, searchOffset: 0,
         searchComplete: false, finished: false, checked: 0, imported: 0, reviewPages: 0, requests: 0, updatedAt: Date.now() });
       scan = (await ctx.db.get("restaurantScans", scanId))!;
     }
-    if (scan.finished) return { kind: "finished" as const };
+    if (scan.finished && scan.areaIndex >= SCAN_AREAS.length) {
+      await ctx.db.patch("restaurantScans", scan._id, { round: (scan.round ?? 0) + 1, areaIndex: 0, searchOffset: 0,
+        searchComplete: false, finished: false, error: undefined, lease: undefined, leaseUntil: undefined, updatedAt: Date.now() });
+      return { kind: "advance" as const };
+    }
     if ((scan.leaseUntil ?? 0) > Date.now()) return { kind: "busy" as const };
     const quota = serpapiQuota(scan);
     if (!quota.allowed) {
@@ -78,7 +84,7 @@ export const acquire = mutation({
     }
     await ctx.db.patch("restaurantScans", scan._id, { lease, leaseUntil: Date.now() + 120000, error: undefined, updatedAt: Date.now() });
     return target ? { kind: "reviews" as const, target, area: SCAN_AREAS[scan.areaIndex] }
-      : { kind: "search" as const, area: SCAN_AREAS[scan.areaIndex], offset: scan.searchOffset };
+      : { kind: "search" as const, area: SCAN_AREAS[scan.areaIndex], offset: scan.searchOffset, round: scan.round ?? 0 };
   },
 });
 
@@ -116,8 +122,11 @@ export const saveSearch = mutation({
   handler: async (ctx, { lease, targets, hasNext }) => {
     const scan = await owned(ctx, lease);
     for (const target of targets.slice(0, 20)) {
-      const existing = await ctx.db.query("restaurantScanTargets").withIndex("by_externalId", query => query.eq("externalId", target.externalId)).unique();
-      if (!existing) await ctx.db.insert("restaurantScanTargets", { ...target, areaIndex: scan.areaIndex, status: "pending",
+      const [existingTarget, existingPlace] = await Promise.all([
+        ctx.db.query("restaurantScanTargets").withIndex("by_externalId", query => query.eq("externalId", target.externalId)).unique(),
+        ctx.db.query("places").withIndex("by_external_place", query => query.eq("externalPlaceId", target.externalId)).first(),
+      ]);
+      if (!existingTarget && !existingPlace) await ctx.db.insert("restaurantScanTargets", { ...target, areaIndex: scan.areaIndex, status: "pending",
         mentionCount: 0, evidenceCount: 0, reviewCount: 0, serpRequests: 0, totals: {}, weights: {}, updatedAt: Date.now() });
     }
     await ctx.db.patch("restaurantScans", scan._id, { searchOffset: scan.searchOffset + 20,
@@ -166,12 +175,13 @@ export const saveReviews = mutation({
         const stem = args.place.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "restaurante";
         let slug = stem, suffix = 1;
         while (await ctx.db.query("places").withIndex("by_slug", query => query.eq("slug", slug)).first()) slug = `${stem}-${++suffix}`;
-        placeId = await ctx.db.insert("places", { ...args.place, slug, city: "Madrid", country: "España",
-          neighborhood: SCAN_AREAS[target.areaIndex], externalPlaceId: target.externalId, priceLevel: 2, status: "published",
+        const area = SCAN_AREAS[target.areaIndex];
+        placeId = await ctx.db.insert("places", { ...args.place, slug, city: area.city, country: "España",
+          neighborhood: area.neighborhood, externalPlaceId: target.externalId, priceLevel: 2, status: "published",
           source: "google_places", googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(args.place.name)}&query_place_id=${encodeURIComponent(target.externalId)}`,
           createdAt: Date.now(), updatedAt: Date.now() });
+        imported = true;
       }
-      imported = true;
     }
     if (placeId) {
       const scores = Object.fromEntries(SCORE_ATTRIBUTES.map(key => [key, weights[key] > 0 ? Math.round(totals[key] / weights[key] * 10) / 10 : 5]));
