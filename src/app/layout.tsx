@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
-import { Analytics } from "@vercel/analytics/next";
 import { siteUrl } from "@/lib/site-url";
 
 export const metadata: Metadata = {
