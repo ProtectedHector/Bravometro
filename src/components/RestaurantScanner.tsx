@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 type Status = { allowed: boolean; ownerId?: string; area?: string; finished?: boolean; checked?: number; imported?: number;
   round?: number;
   reviewPages?: number; requests?: number; serpapiHourRequests?: number; serpapiMonthRequests?: number;
-  serpapiPausedUntil?: number | null; serpapiPauseReason?: "hourly" | "monthly" | null; error?: string | null };
+  serpapiPausedUntil?: number | null; serpapiPauseReason?: "hourly" | "monthly" | null; geminiModel?: string; error?: string | null };
 
 const sleep = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
 
@@ -16,6 +16,11 @@ function pauseLabel(status: Status) {
   const date = new Date(status.serpapiPausedUntil);
   if (status.serpapiPauseReason === "monthly") return `Cuota mensual SerpAPI agotada. Reanuda a partir de ${date.toLocaleString("es-ES")}.`;
   return `Límite horario SerpAPI alcanzado. Continuará a las ${date.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}.`;
+}
+
+function isStaleGeminiModelError(status: Status) {
+  const failedModel = status.error?.match(/Gemini no encuentra el modelo ([a-zA-Z0-9.-]+)/)?.[1];
+  return Boolean(failedModel && status.geminiModel && failedModel !== status.geminiModel);
 }
 
 export function RestaurantScanner() {
@@ -82,10 +87,11 @@ export function RestaurantScanner() {
     <h2>Catálogo de bravas · administración</h2>
     <p>Vuelta {(status.round ?? 0) + 1} · Zona: <b>{status.area}</b> · {status.checked ?? 0} locales revisados · {status.imported ?? 0} con bravas · {status.reviewPages ?? 0} páginas de reseñas · {status.requests ?? 0} consultas SerpAPI.</p>
     <p>SerpAPI: {status.serpapiHourRequests ?? 0}/2900 esta hora · {status.serpapiMonthRequests ?? 0}/15000 este mes.</p>
+    <p>Gemini: <b>{status.geminiModel ?? "comprobando configuración..."}</b></p>
     <p>Solo se incorporan locales con menciones al plato. Las notas de IA son provisionales y pesan menos que las manuales. El progreso se guarda; no se guardan textos de reseñas.</p>
     <p><b>Comprueba que tus proyectos están en el nivel gratuito:</b> si tienen facturación activa, este botón puede generar cargos. Verifica también los permisos de análisis de reseñas y las condiciones de Gemini antes de iniciar.</p>
     <button className="button" disabled={running} onClick={scan}>{running ? "Escaneando…" : status.finished ? "Iniciar nueva vuelta" : "Escanear restaurantes"}</button>
     {running && <button className="button ghost" style={{ marginLeft: 12 }} onClick={() => { active.current = false; }}>Pausar tras esta página</button>}
-    <p role="status" aria-live="polite">{error || pauseLabel(status) || status.error || (running ? "No cierres esta página. Si se alcanza el límite horario de SerpAPI, esperará y continuará en la siguiente hora." : "Puedes reanudar desde el último paso guardado.")}</p>
+    <p role="status" aria-live="polite">{error || pauseLabel(status) || (!isStaleGeminiModelError(status) && status.error) || (running ? "No cierres esta página. Si se alcanza el límite horario de SerpAPI, esperará y continuará en la siguiente hora." : "Puedes reanudar desde el último paso guardado.")}</p>
   </aside>;
 }

@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { NextRequest, NextResponse } from "next/server";
-import { analyzeBravas, attributes, hasEnoughEvidence, object, relevantReviews, reviewPage, ScanError, scannerConfiguration, scannerFailure, serp, SerpApiQuotaError, string } from "@/lib/restaurant-scanner";
+import { analyzeBravas, attributes, configuredGeminiModel, hasEnoughEvidence, object, relevantReviews, reviewPage, ScanError, scannerConfiguration, scannerFailure, serp, SerpApiQuotaError, string } from "@/lib/restaurant-scanner";
 import type { Id, Doc } from "../../../../../convex/_generated/dataModel";
 import { reviewPageSize } from "../../../../../convex/scanLimits";
 import { DISCOVERY_QUERY_ROUNDS, type ScanArea } from "../../../../../convex/scanPlan";
@@ -45,7 +45,7 @@ function failure(error: unknown) {
 }
 
 export async function GET() {
-  try { return NextResponse.json(await scanStatus(await client()), { headers: { "Cache-Control": "no-store" } }); }
+  try { return NextResponse.json({ ...await scanStatus(await client()), geminiModel: configuredGeminiModel() }, { headers: { "Cache-Control": "no-store" } }); }
   catch (error) { return failure(error); }
 }
 

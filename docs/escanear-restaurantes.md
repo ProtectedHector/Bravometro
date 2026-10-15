@@ -3,7 +3,7 @@
 ## Configuración
 
 1. En https://aistudio.google.com/api-keys crea una clave Gemini API. Puedes importar el proyecto Bravometro. La tarjeta «Gemini API» de Cloud es la pertinente, no Code Assist ni Cloud Assist.
-2. En `.env.local` y Vercel añade `GEMINI_API_KEY` como Secret, sin `NEXT_PUBLIC_`. Opcional: `GEMINI_MODEL=gemini-3.8-flash`. Mantén `SERPAPI_API_KEY` como Secret. No publiques claves en chats ni Git; rota la clave SerpAPI que se compartió anteriormente.
+2. En `.env.local` y Vercel añade `GEMINI_API_KEY` como Secret, sin `NEXT_PUBLIC_`. Opcional: `GEMINI_MODEL=gemini-3.1-flash-lite`. Mantén `SERPAPI_API_KEY` como Secret. No publiques claves en chats ni Git; rota la clave SerpAPI que se compartió anteriormente.
 3. En Clerk crea una plantilla JWT llamada `convex`, usando su plantilla Convex (audience `convex`). En Convex configura `CLERK_JWT_ISSUER_DOMAIN` con el issuer exacto de esa plantilla. El escáner usa autenticación JWT real y comprueba el `_id` del usuario en Convex, no un ID enviado por el navegador.
 4. Despliega las funciones y esquema con `npx convex deploy`, después reconstruye Vercel. Las claves SerpAPI/Gemini viven en Vercel, no se necesitan en Convex. Configura por separado desarrollo y producción si tienen distintos Clerk/Convex.
 5. Inicia sesión como el usuario de Convex `jx72bkvz217bgnwv4g3pvvywh98fq64v`. El panel aparece en `/es/bravas`. Si aún no existe su perfil, la sincronización habitual de usuario debe completarse primero.
