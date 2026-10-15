@@ -73,6 +73,12 @@ export function scannerConfiguration() {
   if (!process.env.GEMINI_API_KEY) throw new ScanError("Falta GEMINI_API_KEY en el servidor. Créala en Google AI Studio", 503);
 }
 
+export function configuredGeminiModel() {
+  const model = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
+  if (!/^[a-zA-Z0-9.-]+$/.test(model)) throw new ScanError("GEMINI_MODEL inválido", 503);
+  return model;
+}
+
 export async function serp(parameters: Record<string, string>) {
   const url = new URL("https://serpapi.com/search.json");
   for (const [key, value] of Object.entries({ ...parameters, api_key: process.env.SERPAPI_API_KEY!, hl: "es" })) url.searchParams.set(key, value);
@@ -139,8 +145,7 @@ export async function analyzeBravas(reviews: string[]) {
     discarded: filtered.discarded.length,
   });
   if (!filtered.relevantCount) return { mentionCount: 0, evidenceCount: 0, totals, weights };
-  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-  if (!/^[a-zA-Z0-9.-]+$/.test(model)) throw new ScanError("GEMINI_MODEL inválido", 503);
+  const model = configuredGeminiModel();
   const score = { type: "number", minimum: 0, maximum: 10 };
   const evidenceProperties = Object.fromEntries(attributes.map(key => [key, { type: "boolean" }]));
   const response = await requestWithRetry("Gemini", () => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
