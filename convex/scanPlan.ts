@@ -4,6 +4,7 @@ import {
   VALENCIAN_MUNICIPALITIES,
   type MunicipalityScanArea,
 } from "./scanMunicipalities";
+import { OTHER_SPANISH_MUNICIPALITIES } from "./scanMunicipalitiesRest";
 
 export type ScanArea = {
   label: string;
@@ -22,7 +23,7 @@ const MADRID_CITY_AREAS = [
 ] as const;
 
 function municipalityArea(area: MunicipalityScanArea): ScanArea {
-  const invertedArticle = area.municipality.match(/^(.+), (El|La|Los|Las|el|la|els|les|l')$/);
+  const invertedArticle = area.municipality.match(/^(.+), (El|La|Los|Las|O|A|Os|As|el|la|els|les|o|a|os|as|l')$/);
   const municipality = invertedArticle
     ? `${invertedArticle[2].endsWith("'") ? invertedArticle[2] : `${invertedArticle[2]} `}${invertedArticle[1]}`
     : area.municipality;
@@ -46,6 +47,7 @@ export const SCAN_AREAS: readonly ScanArea[] = [
   ...MADRID_MUNICIPALITIES.map(municipalityArea),
   ...VALENCIAN_MUNICIPALITIES.map(municipalityArea),
   ...CATALAN_MUNICIPALITIES.map(municipalityArea),
+  ...OTHER_SPANISH_MUNICIPALITIES.map(municipalityArea),
 ];
 
 export const DISCOVERY_QUERY_ROUNDS = [

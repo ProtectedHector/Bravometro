@@ -58,7 +58,7 @@ export function RestaurantScanner() {
     setRunning(true);
     setError("");
     try {
-      for (let step = 0; active.current && step < 200; step += 1) {
+      while (active.current) {
         const response = await fetch("/api/restaurants/scan", { method: "POST", signal: AbortSignal.timeout(115000) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "No se pudo escanear");

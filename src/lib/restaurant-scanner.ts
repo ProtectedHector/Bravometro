@@ -1,11 +1,20 @@
 import "server-only";
 export { relevantReviews } from "./review-text";
+import { filterBravasReviews } from "./bravasReviewFilter";
 
 export class ScanError extends Error {
   status: number;
   constructor(message: string, status = 502) {
     super(message);
     this.status = status;
+  }
+}
+
+export class SerpApiQuotaError extends ScanError {
+  pauseReason: "hourly" | "monthly";
+  constructor(message: string, pauseReason: "hourly" | "monthly") {
+    super(message, 429);
+    this.pauseReason = pauseReason;
   }
 }
 
@@ -88,7 +97,11 @@ export async function serp(parameters: Record<string, string>) {
   }
   const providerError = string(data.error);
   if (response.status === 429 || /quota|limit|run out|exceed|credit|searches.*left/i.test(providerError)) {
-    throw new ScanError("Cuota de SerpAPI agotada o límite de peticiones alcanzado. Escaneo pausado; revisa tu cuota antes de reanudar", 429);
+    const monthly = /month|monthly|credit|run out|no searches|searches.*left|plan quota/i.test(providerError);
+    throw new SerpApiQuotaError(
+      monthly ? "Cuota mensual de SerpAPI agotada" : "Límite horario de SerpAPI alcanzado",
+      monthly ? "monthly" : "hourly",
+    );
   }
   if (!response.ok) throw new ScanError(`SerpAPI devolvió HTTP ${response.status}${providerError ? `: ${providerError}` : ". Revisa la clave, parámetros y plan"}`);
   if (providerError && !/hasn't returned any results|no results/i.test(providerError)) throw new ScanError("SerpAPI no pudo completar la búsqueda. Avance conservado; revisa el proveedor");
@@ -119,6 +132,13 @@ export function hasEnoughEvidence(evidenceCount: number, weights: Record<string,
 export async function analyzeBravas(reviews: string[]) {
   const totals: Record<string, number> = {}, weights: Record<string, number> = {};
   if (!reviews.length) return { mentionCount: 0, evidenceCount: 0, totals, weights };
+  const filtered = filterBravasReviews(reviews);
+  console.info("[Bravómetro] Filtro local", {
+    total: filtered.total,
+    relevant: filtered.relevantCount,
+    discarded: filtered.discarded.length,
+  });
+  if (!filtered.relevantCount) return { mentionCount: 0, evidenceCount: 0, totals, weights };
   const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
   if (!/^[a-zA-Z0-9.-]+$/.test(model)) throw new ScanError("GEMINI_MODEL inválido", 503);
   const score = { type: "number", minimum: 0, maximum: 10 };
@@ -131,7 +151,7 @@ export async function analyzeBravas(reviews: string[]) {
 mentions=true solo si la reseña habla realmente del plato. useful=true solo cuando aporta una señal concreta que permite valorar al menos un aspecto; una frase genérica como "buen restaurante" no es útil. Usa señales directas y deducciones razonables, pero nunca inventes ni conviertas estrellas, servicio o ambiente en puntuación del plato.
 Evalúa siempre estos 10 aspectos: overall (calidad global), potato (calidad y cocción de la patata), sauce (calidad de la salsa), texture (crujiente exterior e interior tierno), taste (equilibrio e intensidad del sabor), spiciness (intensidad del picante, no su calidad), quantity (tamaño de la ración), value (relación calidad/precio), presentation (aspecto visual) y originality (personalidad frente a unas bravas estándar).
 Cada score debe ser un número finito 0-10. Cuando no exista evidencia directa ni indirecta razonable para un aspecto, devuelve exactamente 5 y evidence=false. Si existe evidencia, evidence=true y puntúa con esta escala consistente: pésimo 0-2.9, malo 3-4.9, regular 5-6.4, bueno 6.5-7.9, muy bueno 8-9.4, excepcional 9.5-10. confidence 0-1 mide claridad y especificidad, no positividad. No incluyas citas, autores, explicaciones ni paráfrasis.` }] },
-        contents: [{ role: "user", parts: [{ text: JSON.stringify(reviews) }] }],
+        contents: [{ role: "user", parts: [{ text: JSON.stringify(filtered.relevant) }] }],
         generationConfig: { temperature: 0, responseMimeType: "application/json", responseJsonSchema: {
           type: "array", items: { type: "object", properties: {
             mentions: { type: "boolean" }, useful: { type: "boolean" }, confidence: { type: "number", minimum: 0, maximum: 1 },
@@ -155,7 +175,7 @@ Cada score debe ser un número finito 0-10. Cuando no exista evidencia directa n
   const text = Array.isArray(parts) ? parts.map(part => string(object(part).text)).join("") : "";
   let results: unknown;
   try { results = JSON.parse(text); } catch { throw new ScanError("Gemini no devolvió puntuaciones válidas. No se guardó esta página"); }
-  if (!Array.isArray(results) || results.length !== reviews.length) throw new ScanError("Gemini devolvió una cantidad incorrecta de resultados");
+  if (!Array.isArray(results) || results.length !== filtered.relevant.length) throw new ScanError("Gemini devolvió una cantidad incorrecta de resultados");
   let mentionCount = 0, evidenceCount = 0;
   for (const value of results) {
     const row = object(value);

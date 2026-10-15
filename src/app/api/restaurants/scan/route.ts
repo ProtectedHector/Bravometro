@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { NextRequest, NextResponse } from "next/server";
-import { analyzeBravas, attributes, hasEnoughEvidence, object, relevantReviews, reviewPage, ScanError, scannerConfiguration, scannerFailure, serp, string } from "@/lib/restaurant-scanner";
+import { analyzeBravas, attributes, hasEnoughEvidence, object, relevantReviews, reviewPage, ScanError, scannerConfiguration, scannerFailure, serp, SerpApiQuotaError, string } from "@/lib/restaurant-scanner";
 import type { Id, Doc } from "../../../../../convex/_generated/dataModel";
 import { reviewPageSize } from "../../../../../convex/scanLimits";
 import { DISCOVERY_QUERY_ROUNDS, type ScanArea } from "../../../../../convex/scanPlan";
@@ -105,14 +105,14 @@ export async function POST(request: NextRequest) {
       const reviews = relevantReviews(page.data);
       console.info(`[Bravómetro] ${target.externalId} → SerpAPI OK (${((Date.now() - startedAt) / 1000).toFixed(1)}s), ${reviewCount} reseñas obtenidas`);
       const geminiStartedAt = Date.now();
-      console.info(`[Bravómetro] ${target.externalId} → Gemini iniciado`);
+      console.info(`[Bravómetro] ${target.externalId} → análisis local/Gemini iniciado`);
       const analysis = await analyzeBravas(reviews);
       const accumulatedWeights = { ...target.weights };
       for (const key of attributes) accumulatedWeights[key] = (accumulatedWeights[key] ?? 0) + (analysis.weights[key] ?? 0);
       const useful = target.evidenceCount + analysis.evidenceCount;
       const enough = hasEnoughEvidence(useful, accumulatedWeights);
       const covered = attributes.filter(key => (accumulatedWeights[key] ?? 0) > 0).length;
-      console.info(`[Bravómetro] ${target.externalId} → Gemini OK (${((Date.now() - geminiStartedAt) / 1000).toFixed(1)}s), ${analysis.evidenceCount} reseñas útiles, ${covered}/10 aspectos con evidencia${enough ? ", suficiente evidencia → STOP SerpAPI" : ", información insuficiente"}`);
+      console.info(`[Bravómetro] ${target.externalId} → análisis local/Gemini OK (${((Date.now() - geminiStartedAt) / 1000).toFixed(1)}s), ${analysis.evidenceCount} reseñas útiles, ${covered}/10 aspectos con evidencia${enough ? ", suficiente evidencia → STOP SerpAPI" : ", información insuficiente"}`);
       let place: { name: string; address: string; latitude?: number; longitude?: number } | undefined;
       if (analysis.mentionCount > 0 && !target.placeId) {
         place = target.name && target.address ? { name: target.name, address: target.address,
@@ -132,6 +132,14 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json(await scanStatus(convex), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (convex && error instanceof SerpApiQuotaError) {
+      try {
+        await scanMutation(convex, "pauseSerpapi", { lease, pauseReason: error.pauseReason });
+        return NextResponse.json(await scanStatus(convex), { headers: { "Cache-Control": "no-store" } });
+      } catch (pauseError) {
+        console.error("[Bravómetro] No se pudo persistir la pausa de SerpAPI", pauseError);
+      }
+    }
     return finishFailure(error);
   }
 }

@@ -21,6 +21,10 @@ export function sufficientEvidence(evidenceCount: number, weights: Record<string
 
 const HOUR_MS = 60 * 60 * 1000;
 
+export function serpapiProviderPauseUntil(timestamp: number, reason: SerpapiPauseReason) {
+  return reason === "monthly" ? serpapiNextMonthStart(timestamp) : timestamp + HOUR_MS;
+}
+
 export function serpapiHourStart(timestamp: number) {
   return Math.floor(timestamp / HOUR_MS) * HOUR_MS;
 }
@@ -45,11 +49,15 @@ export function serpapiQuotaState(args: {
   hourRequests?: number;
   monthStartedAt?: number;
   monthRequests?: number;
+  pausedUntil?: number;
+  pauseReason?: SerpapiPauseReason;
 }) {
   const hourStartedAt = serpapiHourStart(args.now);
   const monthStartedAt = serpapiMonthStart(args.now);
   const hourRequests = args.hourStartedAt === hourStartedAt ? args.hourRequests ?? 0 : 0;
   const monthRequests = args.monthStartedAt === monthStartedAt ? args.monthRequests ?? 0 : 0;
+  if (args.pausedUntil && args.pauseReason && args.pausedUntil > args.now) return { allowed: false as const, hourStartedAt, hourRequests, monthStartedAt, monthRequests,
+    pausedUntil: args.pausedUntil, pauseReason: args.pauseReason };
   if (monthRequests >= SERPAPI_MONTHLY_LIMIT) return { allowed: false as const, hourStartedAt, hourRequests, monthStartedAt, monthRequests,
     pausedUntil: serpapiNextMonthStart(args.now), pauseReason: "monthly" as const };
   if (hourRequests >= SERPAPI_HOURLY_LIMIT) return { allowed: false as const, hourStartedAt, hourRequests, monthStartedAt, monthRequests,

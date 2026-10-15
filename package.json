@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "municipalities:generate-rest": "node scripts/generate-rest-of-spain-municipalities.mjs",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy"
   },
