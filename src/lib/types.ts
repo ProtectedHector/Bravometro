@@ -55,7 +55,7 @@ export interface Place {
   verifiedAt?: number;
   priceLevel: 1 | 2 | 3 | 4;
   image?: string;
-  status: "demo" | "published" | "draft";
+  status: "demo" | "published" | "draft" | "deleted";
   productType: ProductType;
   scores: Pick<DishScores, "overall"> & Partial<Omit<DishScores, "overall">> & { presentation?: number; originality?: number };
   automaticScore?: number;

@@ -1,0 +1,28 @@
+import { ConvexError, v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+import { administrator } from "./adminIdentity";
+
+export const status = query({
+  args: { slug: v.string() },
+  handler: async (ctx, { slug }) => {
+    const user = await administrator(ctx);
+    if (!user) return { allowed: false as const };
+    const place = await ctx.db.query("places").withIndex("by_slug", value => value.eq("slug", slug)).unique();
+    return { allowed: true as const, canDelete: place?.status === "published" };
+  },
+});
+
+export const markPermanentlyClosed = mutation({
+  args: { slug: v.string() },
+  handler: async (ctx, { slug }) => {
+    const user = await administrator(ctx);
+    if (!user) throw new ConvexError("Solo el administrador puede eliminar restaurantes");
+    const place = await ctx.db.query("places").withIndex("by_slug", value => value.eq("slug", slug)).unique();
+    if (!place) throw new ConvexError("El restaurante no existe");
+    if (place.status === "deleted") return { deleted: true as const };
+    if (place.status !== "published") throw new ConvexError("El restaurante no está publicado");
+    const now = Date.now();
+    await ctx.db.patch("places", place._id, { status: "deleted", deletedAt: now, deletedBy: user._id, updatedAt: now });
+    return { deleted: true as const };
+  },
+});
