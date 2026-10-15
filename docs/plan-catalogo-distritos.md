@@ -4,7 +4,7 @@ Fecha: 8 de octubre de 2026. Estado: Fase 1 actualizada a `bravas-gemini-2.3`, p
 
 ## Implementación del piloto
 
-El botón «Escanear restaurantes» de `/es/bravas` es exclusivo del usuario de Convex `jx72bkvz217bgnwv4g3pvvywh98fq64v`, con comprobación JWT en el backend. Usa SerpAPI para descubrimiento/reseñas y Gemini para confirmar menciones al plato y valorar contexto. Conserva progreso por local y página en Convex, sin textos. Solo incorpora locales con menciones reales a bravas; una mención sin juicio de calidad no inventa una nota. La cola ejecutable territorial está en `convex/scanPlan.ts`: mantiene este plan inicial en sus primeros 24 índices y después amplía la cobertura a todos los municipios de Comunidad de Madrid, Comunitat Valenciana y Cataluña definidos desde el nomenclátor oficial del INE en `convex/scanMunicipalities.ts`. Consulta `escanear-restaurantes.md` para configuración, rondas, cuotas y límites de cobertura.
+El botón «Escanear restaurantes» de `/es/bravas` es exclusivo del usuario de Convex `jx72bkvz217bgnwv4g3pvvywh98fq64v`, con comprobación JWT en el backend. Usa SerpAPI para descubrimiento/reseñas y Gemini para confirmar menciones al plato y valorar contexto. Conserva progreso por local y página en Convex, sin textos. Solo incorpora locales con menciones reales a bravas; una mención sin juicio de calidad no inventa una nota. La cola ejecutable territorial está en `convex/scanPlan.ts`: mantiene este plan inicial en sus primeros 24 índices y después amplía la cobertura, en orden, a Comunidad de Madrid, Comunitat Valenciana, Cataluña y el resto de municipios de España definidos desde la relación oficial del INE de 2026. Consulta `escanear-restaurantes.md` para configuración, rondas, cuotas y límites de cobertura.
 
 ## Objetivo
 

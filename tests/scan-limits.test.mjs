@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MAX_REVIEW_PAGES, REVIEW_LIMIT, SCORE_ATTRIBUTES, SERPAPI_HOURLY_LIMIT, SERPAPI_MONTHLY_LIMIT, reviewPageSize, serpapiNextHourStart, serpapiNextMonthStart, serpapiQuotaState, sufficientEvidence } from "../convex/scanLimits.ts";
+import { MAX_REVIEW_PAGES, REVIEW_LIMIT, SCORE_ATTRIBUTES, SERPAPI_HOURLY_LIMIT, SERPAPI_MONTHLY_LIMIT, reviewPageSize, serpapiNextHourStart, serpapiNextMonthStart, serpapiProviderPauseUntil, serpapiQuotaState, sufficientEvidence } from "../convex/scanLimits.ts";
 import { automaticOverallFromScores } from "../convex/ratingMath.ts";
 
 test("the automatic rating always defines the ten requested aspects", () => {
@@ -53,4 +53,13 @@ test("SerpAPI quota pauses for the month after consuming the plan searches", () 
   assert.equal(state.allowed, false);
   assert.equal(state.pauseReason, "monthly");
   assert.equal(state.pausedUntil, serpapiNextMonthStart(now));
+});
+
+test("a provider hourly limit remains paused for a full hour and then resumes", () => {
+  const now = Date.UTC(2026, 9, 8, 10, 30);
+  const pausedUntil = serpapiProviderPauseUntil(now, "hourly");
+  const paused = serpapiQuotaState({ now, hourRequests: 20, monthRequests: 1000, pausedUntil, pauseReason: "hourly" });
+  assert.equal(paused.allowed, false);
+  assert.equal(paused.pausedUntil, now + 60 * 60 * 1000);
+  assert.equal(serpapiQuotaState({ now: pausedUntil, hourRequests: 20, monthRequests: 1000, pausedUntil, pauseReason: "hourly" }).allowed, true);
 });

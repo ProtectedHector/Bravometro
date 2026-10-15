@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, type QueryCtx, type MutationCtx } from "./_generated/server";
 import { SCAN_AREAS, SCANNER_USER_ID, SCANNER_VERSION } from "./scanPlan";
-import { MAX_REVIEW_PAGES, REVIEW_LIMIT, SCORE_ATTRIBUTES, serpapiQuotaState, sufficientEvidence } from "./scanLimits";
+import { MAX_REVIEW_PAGES, REVIEW_LIMIT, SCORE_ATTRIBUTES, serpapiProviderPauseUntil, serpapiQuotaState, sufficientEvidence } from "./scanLimits";
 import { automaticOverallFromScores } from "./ratingMath";
 
 async function permitted(ctx: QueryCtx | MutationCtx) {
@@ -21,7 +21,8 @@ async function state(ctx: QueryCtx | MutationCtx) {
 
 function serpapiQuota(scan: NonNullable<Awaited<ReturnType<typeof state>>>) {
   return serpapiQuotaState({ now: Date.now(), hourStartedAt: scan.serpapiHourStartedAt, hourRequests: scan.serpapiHourRequests,
-    monthStartedAt: scan.serpapiMonthStartedAt, monthRequests: scan.serpapiMonthRequests });
+    monthStartedAt: scan.serpapiMonthStartedAt, monthRequests: scan.serpapiMonthRequests,
+    pausedUntil: scan.serpapiPausedUntil, pauseReason: scan.serpapiPauseReason });
 }
 
 export const status = query({
@@ -117,6 +118,23 @@ export const reserveRequest = mutation({
   },
 });
 
+export const pauseSerpapi = mutation({
+  args: { lease: v.string(), pauseReason: v.union(v.literal("hourly"), v.literal("monthly")) },
+  handler: async (ctx, { lease, pauseReason }) => {
+    const scan = await owned(ctx, lease);
+    const pausedUntil = serpapiProviderPauseUntil(Date.now(), pauseReason);
+    await ctx.db.patch("restaurantScans", scan._id, {
+      serpapiPausedUntil: pausedUntil,
+      serpapiPauseReason: pauseReason,
+      error: pauseReason === "monthly" ? "Cuota mensual de SerpAPI agotada" : "Límite horario de SerpAPI alcanzado",
+      lease: undefined,
+      leaseUntil: undefined,
+      updatedAt: Date.now(),
+    });
+    return { pausedUntil, pauseReason };
+  },
+});
+
 export const saveSearch = mutation({
   args: { lease: v.string(), targets: v.array(v.object({ externalId: v.string(), dataId: v.string(), name: v.optional(v.string()), address: v.optional(v.string()), latitude: v.optional(v.number()), longitude: v.optional(v.number()) })), hasNext: v.boolean() },
   handler: async (ctx, { lease, targets, hasNext }) => {
@@ -183,7 +201,7 @@ export const saveReviews = mutation({
         imported = true;
       }
     }
-    if (placeId) {
+    if (placeId && !nextPage) {
       const scores = Object.fromEntries(SCORE_ATTRIBUTES.map(key => [key, weights[key] > 0 ? Math.round(totals[key] / weights[key] * 10) / 10 : 5]));
       scores.overall = automaticOverallFromScores({
         potato: scores.potato,
