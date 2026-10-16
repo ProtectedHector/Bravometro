@@ -51,7 +51,7 @@ async function present(ctx: QueryCtx, place: Doc<"places">) {
   return { id: place._id, name: place.name, slug: place.slug, city: place.city, country: place.country, neighborhood: place.neighborhood,
     address: place.address, latitude: place.latitude, longitude: place.longitude, website: place.website, phone: place.phone,
     googlePlaceId: place.externalPlaceId, googleMapsUrl: place.googleMapsUrl, source: place.source, verifiedAt: place.verifiedAt,
-    priceLevel: place.priceLevel, image: adminImageUrl ?? place.image, status: place.status, productType: "bravas", scores,
+    priceLevel: place.priceLevel, image: adminImageUrl ?? place.image, noPhotoFound: place.noPhotoFound === true, status: place.status, productType: "bravas", scores,
     confidence: confidence(confidenceScore), confidenceScore, evidenceCount: editorial?.evidenceCount ?? (community.length || numberOr(automatic?.evidenceCount, 0)),
     summary: { es: editorial?.summaryEs ?? (community.length ? "Puntuación basada en valoraciones aprobadas de la comunidad de Bravómetro." : "Estimación automática provisional de las bravas. No es una valoración manual."),
       en: editorial?.summaryEn ?? (community.length ? "Score based on approved ratings from the Bravómetro community." : "Provisional automated bravas estimate. Not a manual rating.") },
