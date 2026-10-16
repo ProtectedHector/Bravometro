@@ -22,6 +22,7 @@ export const demoPlaces: Place[] = [
     highlights: { es: ["Patata muy consistente", "Salsa con personalidad", "Picante moderado"], en: ["Consistent potato", "Distinctive sauce", "Moderate heat"] },
     methodologyVersion: "1.0",
     analyzedAt: "2026-09-20",
+    createdAt: new Date("2026-09-20").getTime(),
   },
   {
     id: "sample-la-esquina",
@@ -44,6 +45,7 @@ export const demoPlaces: Place[] = [
     highlights: { es: ["Salsa protagonista", "Picante alegre", "Muy buena relación calidad/precio"], en: ["Sauce-forward", "Lively heat", "Strong value"] },
     methodologyVersion: "1.0",
     analyzedAt: "2026-09-18",
+    createdAt: new Date("2026-09-18").getTime(),
   },
   {
     id: "sample-el-delantal",
@@ -66,5 +68,6 @@ export const demoPlaces: Place[] = [
     highlights: { es: ["Textura crujiente", "Salsa suave", "Presentación cuidada"], en: ["Crisp texture", "Mild sauce", "Careful presentation"] },
     methodologyVersion: "1.0",
     analyzedAt: "2026-09-11",
+    createdAt: new Date("2026-09-11").getTime(),
   },
 ];

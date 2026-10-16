@@ -15,7 +15,7 @@ function logConvexFallback(label: string, error: unknown) {
   console.warn(`${label}: ${message.slice(0, 500)}`);
 }
 
-async function queryAllPages<T>(convex: ConvexHttpClient, functionName: string): Promise<T[]> {
+async function queryAllPages<T>(convex: ConvexHttpClient, functionName: string, limit = Infinity): Promise<T[]> {
   const rows: T[] = [];
   let cursor: string | null = null;
   do {
@@ -24,21 +24,22 @@ async function queryAllPages<T>(convex: ConvexHttpClient, functionName: string):
       { paginationOpts: { cursor, numItems: 75 } },
     );
     rows.push(...result.page);
+    if (rows.length >= limit) return rows.slice(0, limit);
     cursor = result.isDone ? null : result.continueCursor;
     if (result.isDone) return rows;
   } while (cursor);
   return rows;
 }
 
-export async function getPlaces(): Promise<Place[]> {
+export async function getPlaces(limit = Infinity): Promise<Place[]> {
   const convex = client();
-  if (!convex) return demoPlaces;
+  if (!convex) return demoPlaces.slice(0, limit);
 
   try {
-    return await queryAllPages<Place>(convex, "places:listPage");
+    return await queryAllPages<Place>(convex, "places:listPage", limit);
   } catch (error) {
     logConvexFallback("Convex unavailable; showing clearly labelled demo data", error);
-    return demoPlaces;
+    return demoPlaces.slice(0, limit);
   }
 }
 

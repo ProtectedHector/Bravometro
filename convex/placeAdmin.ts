@@ -2,6 +2,11 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { administrator } from "./adminIdentity";
 
+export const access = query({
+  args: {},
+  handler: async ctx => ({ allowed: Boolean(await administrator(ctx)) }),
+});
+
 export const status = query({
   args: { slug: v.string() },
   handler: async (ctx, { slug }) => {

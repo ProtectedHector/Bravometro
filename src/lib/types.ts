@@ -68,6 +68,7 @@ export interface Place {
   highlights: Record<Locale, string[]>;
   methodologyVersion: string;
   analyzedAt: string;
+  createdAt?: number;
   communityScore?: number;
   communityRatingCount?: number;
   communityPhotos?: Array<{url:string;userName:string;score:number;comment?:string}>;
