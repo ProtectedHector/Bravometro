@@ -3,6 +3,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeBravas, attributes, configuredGeminiModel, hasEnoughEvidence, object, relevantReviews, reviewPage, ScanError, scannerConfiguration, scannerFailure, serp, SerpApiQuotaError, string } from "@/lib/restaurant-scanner";
+import { isPermanentlyClosedGoogleMapsResult } from "@/lib/place-business-status";
 import type { Id, Doc } from "../../../../../convex/_generated/dataModel";
 import { reviewPageSize } from "../../../../../convex/scanLimits";
 import { DISCOVERY_QUERY_ROUNDS, type ScanArea } from "../../../../../convex/scanPlan";
@@ -84,14 +85,15 @@ export async function POST(request: NextRequest) {
       const queryIndex = Math.min(Math.floor(work.offset / 20), roundQueries.length - 1);
       const data = await fetchSerp({ engine: "google_maps", type: "search", q: `${roundQueries[queryIndex]} ${work.area.searchLocation}` });
       const results = Array.isArray(data.local_results) ? data.local_results : [];
-      const targets = results.flatMap(value => {
+      const openResults = results.filter(value => !isPermanentlyClosedGoogleMapsResult(value));
+      const targets = openResults.flatMap(value => {
         const result = object(value), externalId = string(result.place_id), dataId = string(result.data_id), gps = object(result.gps_coordinates);
         return externalId && dataId ? [{ externalId, dataId, ...(string(result.title) ? { name: string(result.title) } : {}),
           ...(string(result.address) ? { address: string(result.address) } : {}),
           ...(typeof gps.latitude === "number" ? { latitude: gps.latitude } : {}),
           ...(typeof gps.longitude === "number" ? { longitude: gps.longitude } : {}) }] : [];
       });
-      if (results.length && !targets.length) return finishFailure(new ScanError("SerpAPI no devolvió identificadores de los locales. No se avanzó la búsqueda"));
+      if (openResults.length && !targets.length) return finishFailure(new ScanError("SerpAPI no devolvió identificadores de los locales. No se avanzó la búsqueda"));
       await scanMutation(convex, "saveSearch", { lease, targets, hasNext: work.offset + 20 < roundQueries.length * 20 });
     } else if (work.kind === "reviews") {
       const target = work.target;

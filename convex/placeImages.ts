@@ -1,13 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation, type QueryCtx, type MutationCtx } from "./_generated/server";
-import { SCANNER_USER_ID } from "./scanPlan";
-
-async function administrator(ctx: QueryCtx | MutationCtx) {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity || identity.issuer !== process.env.CLERK_JWT_ISSUER_DOMAIN) return null;
-  const user = await ctx.db.query("users").withIndex("by_clerk_id", query => query.eq("clerkUserId", identity.subject)).unique();
-  return user?._id === SCANNER_USER_ID ? user : null;
-}
+import { administrator } from "./adminIdentity";
 
 async function eligibility(ctx: QueryCtx | MutationCtx, slug: string) {
   const user = await administrator(ctx);

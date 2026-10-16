@@ -1,9 +1,10 @@
 "use client";
-import { useEffect,useMemo,useRef,useState } from "react";
+import { useCallback,useEffect,useMemo,useRef,useState } from "react";
 import Link from "next/link";
 import { formatScore } from "@/lib/bravometro/scoring";
 import { track } from "@/lib/analytics";
 import { loadGoogleMaps } from "@/components/GooglePlacesMap";
+import { buildMapHref,buildPlaceHref,type MapViewState } from "@/lib/map-state";
 import type { Dictionary } from "@/lib/i18n";
 import type { Locale, MapPlace } from "@/lib/types";
 
@@ -19,11 +20,12 @@ function markerIcon(label:string,color:string,selected:boolean):google.maps.Icon
   return {url:`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,scaledSize:new google.maps.Size(width,height),anchor:new google.maps.Point(width/2,height-3)};
 }
 
-export function MapExplorer({ places, votedPlaceIds, locale, dictionary: d, mapApiKey, mapId }: { places: MapPlace[]; votedPlaceIds: string[]; locale: Locale; dictionary: Dictionary; mapApiKey?: string; mapId?: string }) {
+export function MapExplorer({ places, votedPlaceIds, locale, dictionary: d, mapApiKey, mapId, initialMapState }: { places: MapPlace[]; votedPlaceIds: string[]; locale: Locale; dictionary: Dictionary; mapApiKey?: string; mapId?: string; initialMapState?: MapViewState }) {
   const mappablePlaces=useMemo(()=>places.filter((place):place is MappablePlace=>typeof place.latitude==="number"&&typeof place.longitude==="number"),[places]);
   const boundsKey=useMemo(()=>mappablePlaces.map(place=>`${place.id}:${place.latitude}:${place.longitude}`).join("|"),[mappablePlaces]);
   const votedIds=useMemo(()=>new Set(votedPlaceIds),[votedPlaceIds]);
-  const [selected,setSelected]=useState<MappablePlace|undefined>(mappablePlaces[0]);
+  const [selected,setSelected]=useState<MappablePlace|undefined>(()=>mappablePlaces.find(place=>place.id===initialMapState?.selectedPlaceId)??mappablePlaces[0]);
+  const [mapHref,setMapHref]=useState(()=>initialMapState?buildMapHref(locale,initialMapState):`/${locale}/mapa`);
   const [status,setStatus]=useState<"idle"|"ready"|"error">("idle");
   const [error,setError]=useState("");
   const [mapReady,setMapReady]=useState(false);
@@ -31,8 +33,24 @@ export function MapExplorer({ places, votedPlaceIds, locale, dictionary: d, mapA
   const mapRef=useRef<google.maps.Map|null>(null);
   const markersRef=useRef<google.maps.Marker[]>([]);
   const userMarkerRef=useRef<google.maps.Marker|null>(null);
+  const idleListenerRef=useRef<google.maps.MapsEventListener|null>(null);
   const fittedBoundsKeyRef=useRef("");
   const activeSelected=selected&&mappablePlaces.some(place=>place.id===selected.id)?selected:mappablePlaces[0];
+  const selectedIdRef=useRef(activeSelected?.id);
+
+  const persistMapState=useCallback((selectedPlaceId=selectedIdRef.current)=>{
+    const center=mapRef.current?.getCenter();
+    const zoom=mapRef.current?.getZoom();
+    if(!center||zoom===undefined)return;
+    const href=buildMapHref(locale,{latitude:center.lat(),longitude:center.lng(),zoom,selectedPlaceId});
+    window.history.replaceState(null,"",href);
+    setMapHref(href);
+  },[locale]);
+
+  useEffect(()=>{
+    selectedIdRef.current=activeSelected?.id;
+    if(mapReady)persistMapState(activeSelected?.id);
+  },[activeSelected?.id,mapReady,persistMapState]);
 
   useEffect(()=>{
     if(!mapApiKey||!containerRef.current)return;
@@ -40,11 +58,13 @@ export function MapExplorer({ places, votedPlaceIds, locale, dictionary: d, mapA
     void loadGoogleMaps(mapApiKey).then(async()=>{
       const{Map}=await google.maps.importLibrary("maps") as google.maps.MapsLibrary;
       if(!active||!containerRef.current)return;
-      mapRef.current=new Map(containerRef.current,{center:{lat:40.4168,lng:-3.7038},zoom:12,...(mapId?{mapId}:{}),fullscreenControl:true,mapTypeControl:true,streetViewControl:true,zoomControl:true,gestureHandling:"greedy"});
+      mapRef.current=new Map(containerRef.current,{center:initialMapState?{lat:initialMapState.latitude,lng:initialMapState.longitude}:{lat:40.4168,lng:-3.7038},zoom:initialMapState?.zoom??12,...(mapId?{mapId}:{}),fullscreenControl:true,mapTypeControl:true,streetViewControl:true,zoomControl:true,gestureHandling:"greedy"});
+      if(initialMapState)fittedBoundsKeyRef.current=boundsKey;
+      idleListenerRef.current=mapRef.current.addListener("idle",()=>persistMapState());
       setMapReady(true);
     }).catch(reason=>{if(active)setError(reason instanceof Error?reason.message:"Google Maps no se ha podido cargar")});
-    return()=>{active=false;setMapReady(false)};
-  },[mapApiKey,mapId]);
+    return()=>{active=false;if(idleListenerRef.current)google.maps.event.removeListener(idleListenerRef.current);idleListenerRef.current=null;setMapReady(false)};
+  },[mapApiKey,mapId,boundsKey,initialMapState,persistMapState]);
   useEffect(()=>{
     if(!mapReady||!mapRef.current||!mappablePlaces.length)return;
     let active=true;
@@ -58,7 +78,7 @@ export function MapExplorer({ places, votedPlaceIds, locale, dictionary: d, mapA
         const voted=votedIds.has(place.id);
         const score=formatScore(place.scores.overall,locale);
         const marker=new google.maps.Marker({map:mapRef.current,position:{lat:place.latitude,lng:place.longitude},title:place.name,icon:markerIcon(score,voted?"#178a4a":"#d83b19",isSelected),zIndex:isSelected?20:10});
-        marker.addListener("click",()=>setSelected(place));
+        marker.addListener("click",()=>{selectedIdRef.current=place.id;setSelected(place);persistMapState(place.id)});
         markersRef.current.push(marker);
         bounds.extend({lat:place.latitude,lng:place.longitude});
       }
@@ -70,7 +90,7 @@ export function MapExplorer({ places, votedPlaceIds, locale, dictionary: d, mapA
       }
     }).catch(reason=>{if(active)setError(reason instanceof Error?reason.message:"Google Maps no se ha podido cargar")});
     return()=>{active=false};
-  },[mapReady,mappablePlaces,boundsKey,activeSelected,locale,votedIds]);
+  },[mapReady,mappablePlaces,boundsKey,activeSelected,locale,votedIds,persistMapState]);
 
   function locate(){
     track("nearby_requested");
@@ -88,5 +108,5 @@ export function MapExplorer({ places, votedPlaceIds, locale, dictionary: d, mapA
 
   if(!mapApiKey)return <div className="places-map places-map-unavailable">{d.contribute.mapSetup}</div>;
   return <><div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:16}}><button className="button" onClick={locate}>⌖ {d.actions.nearMe}</button>{status!=="idle"&&<span className="pill">{status==="ready"?d.map.locationReady:d.map.locationError}</span>}</div>
-  <div className="bravas-map-shell">{error&&<div className="notice">{error}</div>}<div ref={containerRef} className="bravas-map" role="application" aria-label="Google Maps"/>{activeSelected&&<div className="card map-card"><span className="pill">{activeSelected.neighborhood}</span><h2 style={{margin:"10px 0 4px"}}>{activeSelected.name}</h2><strong style={{fontSize:"2rem",color:"var(--red)"}}>{formatScore(activeSelected.scores.overall,locale)}</strong><p style={{color:"var(--muted)"}}>{activeSelected.address}</p><Link className="button" href={`/${locale}/bravas/${activeSelected.slug}`}>{d.actions.viewPlace} →</Link></div>}</div></>;
+  <div className="bravas-map-shell">{error&&<div className="notice">{error}</div>}<div ref={containerRef} className="bravas-map" role="application" aria-label="Google Maps"/>{activeSelected&&<div className="card map-card"><span className="pill">{activeSelected.neighborhood}</span><h2 style={{margin:"10px 0 4px"}}>{activeSelected.name}</h2><strong style={{fontSize:"2rem",color:"var(--red)"}}>{formatScore(activeSelected.scores.overall,locale)}</strong><p style={{color:"var(--muted)"}}>{activeSelected.address}</p><Link className="button" href={buildPlaceHref(locale,activeSelected.slug,mapHref)}>{d.actions.viewPlace} →</Link></div>}</div></>;
 }

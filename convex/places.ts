@@ -76,7 +76,7 @@ export const listMap = query({ args: {}, handler: async ctx => {
 } });
 export const bySlug = query({ args: { slug: v.string() }, handler: async (ctx, { slug }) => {
   const place = await ctx.db.query("places").withIndex("by_slug", query => query.eq("slug", slug)).unique();
-  return place ? present(ctx, place) : null;
+  return place?.status === "published" ? present(ctx, place) : null;
 } });
 export const listBasic = query({ args: {}, handler: async ctx => {
   const places = await ctx.db.query("places").filter(query => query.eq(query.field("status"), "published")).collect();
@@ -86,7 +86,9 @@ export const findByExternalIds = query({ args: { externalPlaceIds: v.array(v.str
   const rows = [];
   for (const externalPlaceId of externalPlaceIds.slice(0, 20)) {
     const place = await ctx.db.query("places").withIndex("by_external_place", query => query.eq("externalPlaceId", externalPlaceId)).first();
-    if (!place || place.status !== "published") continue;
+    if (!place) continue;
+    if (place.status === "deleted") { rows.push({ googlePlaceId: externalPlaceId, deleted: true as const }); continue; }
+    if (place.status !== "published") continue;
     const presented = await present(ctx, place);
     rows.push({ googlePlaceId: externalPlaceId, slug: place.slug, score: presented?.scores.overall ?? null, ratingCount: presented?.communityRatingCount ?? 0 });
   }
