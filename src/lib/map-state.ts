@@ -48,7 +48,8 @@ export function getPlaceBackHref(locale: string, from?: string): string {
 
   try {
     const url = new URL(from, "https://bravometro.local");
-    if (url.origin !== "https://bravometro.local" || url.pathname !== `/${locale}/mapa`) return fallback;
+    const allowedPaths = [`/${locale}/mapa`, `/${locale}/bravas`];
+    if (url.origin !== "https://bravometro.local" || !allowedPaths.includes(url.pathname)) return fallback;
     return `${url.pathname}${url.search}`;
   } catch {
     return fallback;

@@ -30,6 +30,13 @@ test("a place opened from the map returns to the exact map state", () => {
   assert.equal(getPlaceBackHref("es", from), mapHref);
 });
 
+test("a place opened from the catalog returns to its filters and page", () => {
+  const catalogHref = "/es/bravas?city=Madrid&noPhoto=1&page=3";
+  const placeHref = buildPlaceHref("es", "bar-manolo", catalogHref);
+  const from = new URL(placeHref, "https://example.test").searchParams.get("from") ?? undefined;
+  assert.equal(getPlaceBackHref("es", from), catalogHref);
+});
+
 test("detail pages reject external or cross-locale return URLs", () => {
   assert.equal(getPlaceBackHref("es", "https://evil.test/es/mapa"), "/es/bravas");
   assert.equal(getPlaceBackHref("es", "/en/mapa?zoom=12"), "/es/bravas");
