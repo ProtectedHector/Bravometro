@@ -6,7 +6,7 @@ import { AdminPlaceStatus } from "@/components/AdminPlaceStatus";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { formatScore } from "@/lib/bravometro/scoring";
-import { filterCatalogPlaces, readCatalogState } from "@/lib/catalog-state";
+import { findNextCatalogPlace, readCatalogState } from "@/lib/catalog-state";
 import { getPlaceBySlug,getPlaces } from "@/lib/data";
 import { getDictionary,isLocale } from "@/lib/i18n";
 import { buildPlaceHref,getPlaceBackHref } from "@/lib/map-state";
@@ -16,7 +16,7 @@ export async function generateMetadata({params}:{params:Promise<{locale:string;s
 
 export default async function PlaceDetail({params,searchParams}:{params:Promise<{locale:string;slug:string}>;searchParams:Promise<{from?:string|string[]}>}){
   const{locale,slug}=await params;if(!isLocale(locale))notFound();const query=await searchParams;const from=typeof query.from==="string"?query.from:query.from?.[0];const backHref=getPlaceBackHref(locale,from);await connection();const[place,loadedPlaces]=await Promise.all([getPlaceBySlug(slug),backHref.startsWith(`/${locale}/bravas`)?getPlaces(200):Promise.resolve([])]);if(!place)notFound();const d=getDictionary(locale);
-  const catalogUrl=new URL(backHref,"https://bravometro.local");const catalogPlaces=filterCatalogPlaces(loadedPlaces.filter(candidate=>candidate.productType==="bravas"),readCatalogState(catalogUrl.searchParams));const currentIndex=catalogPlaces.findIndex(candidate=>candidate.slug===slug);const nextPlace=currentIndex>=0?catalogPlaces[currentIndex+1]:undefined;const nextHref=nextPlace?buildPlaceHref(locale,nextPlace.slug,backHref):undefined;
+  const catalogUrl=new URL(backHref,"https://bravometro.local");const nextPlace=findNextCatalogPlace(loadedPlaces.filter(candidate=>candidate.productType==="bravas"),slug,readCatalogState(catalogUrl.searchParams));const nextHref=nextPlace?buildPlaceHref(locale,nextPlace.slug,backHref):undefined;
   const attributes=[["potato",d.attributes.potato],["sauce",d.attributes.sauce],["texture",d.attributes.texture],["taste",d.attributes.taste],["spiciness",d.attributes.spiciness],["quantity",d.attributes.quantity],["value",d.attributes.value],["presentation",d.attributes.presentation],["originality",d.attributes.originality]] as const;
   const rateHref=place.googlePlaceId?`/${locale}/publicar?place=${encodeURIComponent(place.googlePlaceId)}`:`/${locale}/publicar`;
   const structured={"@context":"https://schema.org","@type":"Restaurant",name:place.name,address:{"@type":"PostalAddress",streetAddress:place.address,addressLocality:place.city,addressCountry:place.country},servesCuisine:"Spanish",...(place.communityRatingCount?{aggregateRating:{"@type":"AggregateRating",ratingValue:place.communityScore,bestRating:10,ratingCount:place.communityRatingCount}}:place.automaticScore===undefined?{aggregateRating:{"@type":"AggregateRating",ratingValue:place.scores.overall,bestRating:10,ratingCount:place.evidenceCount}}:{})};

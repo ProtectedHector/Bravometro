@@ -40,9 +40,15 @@ export async function POST(request: NextRequest) {
     try { body = await request.json(); } catch { return NextResponse.json({ error: "Solicitud inválida" }, { status: 400 }); }
     if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Solicitud inválida" }, { status: 400 });
     const values = body as Record<string, unknown>;
-    if (values.operation !== "markPermanentlyClosed" || typeof values.slug !== "string" || !values.slug || values.slug.length > 300) {
+    if (typeof values.slug !== "string" || !values.slug || values.slug.length > 300) {
       return NextResponse.json({ error: "Solicitud inválida" }, { status: 400 });
     }
-    return NextResponse.json(await convex.mutation(makeFunctionReference<"mutation">("placeAdmin:markPermanentlyClosed"), { slug: values.slug }));
+    if (values.operation === "markPermanentlyClosed") {
+      return NextResponse.json(await convex.mutation(makeFunctionReference<"mutation">("placeAdmin:markPermanentlyClosed"), { slug: values.slug }));
+    }
+    if (values.operation === "setNoPhotoFound" && typeof values.noPhotoFound === "boolean") {
+      return NextResponse.json(await convex.mutation(makeFunctionReference<"mutation">("placeAdmin:setNoPhotoFound"), { slug: values.slug, noPhotoFound: values.noPhotoFound }));
+    }
+    return NextResponse.json({ error: "Solicitud inválida" }, { status: 400 });
   } catch (error) { return failure(error); }
 }
