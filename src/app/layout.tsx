@@ -8,7 +8,16 @@ export const metadata: Metadata = {
   title: { default: "Bravómetro · Medidor de la calidad de las bravas", template: "%s · Bravómetro" },
   description: "Convertimos las opiniones sobre las patatas bravas en información que realmente puedes utilizar.",
   applicationName: "Bravómetro",
-  icons: { icon: "/assets/mascot.png", shortcut: "/assets/mascot.png", apple: "/assets/app-icon.png" },
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Bravómetro" },
+  icons: {
+    icon: [
+      { url: "/assets/app-icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/assets/app-icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    shortcut: "/assets/app-icon-192.png",
+    apple: [{ url: "/assets/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
   openGraph: { type: "website", siteName: "Bravómetro", images: [{ url: "/assets/app-icon.png", width: 1254, height: 1254, type: "image/png", alt: "Logo de Bravómetro" }] },
   twitter: { card: "summary", images: [{ url: "/assets/app-icon.png", alt: "Logo de Bravómetro" }] },
 };
