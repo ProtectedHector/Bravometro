@@ -6,7 +6,7 @@ import type { Locale, Place } from "@/lib/types";
 
 type ScoreBar = [string, number | undefined];
 
-export function PlaceCard({ place, locale, dictionary: d, rank }: { place: Place; locale: Locale; dictionary: Dictionary; rank?: number }) {
+export function PlaceCard({ place, locale, dictionary: d, rank, href }: { place: Place; locale: Locale; dictionary: Dictionary; rank?: number; href?: string }) {
   const hasManualRating = (place.communityRatingCount ?? 0) > 0 || place.automaticScore === undefined;
   const baseBars: ScoreBar[] = [
     [d.attributes.potato,place.scores.potato],
@@ -27,7 +27,7 @@ export function PlaceCard({ place, locale, dictionary: d, rank }: { place: Place
   });
   const reviewPhoto=place.communityPhotos?.[0];
   const cardImage=reviewPhoto?.url??place.image;
-  return <Link id={`place-${place.slug}`} href={`/${locale}/bravas/${place.slug}`} className="card place-card" aria-label={`${place.name}: ${formatScore(place.scores.overall, locale)}`}>
+  return <Link id={`place-${place.slug}`} href={href ?? `/${locale}/bravas/${place.slug}`} className="card place-card" aria-label={`${place.name}: ${formatScore(place.scores.overall, locale)}`}>
     <div className={`place-art${cardImage?" place-art-photo":""}`}>
       {cardImage&&<Image src={cardImage} alt={`${d.contribute.photo}: ${place.name}`} fill unoptimized sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" className="place-review-photo"/>}
       {rank&&<span className="place-rank">{rank}</span>}<strong className="place-score">{formatScore(place.scores.overall, locale)}</strong>
