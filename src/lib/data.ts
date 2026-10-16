@@ -3,6 +3,8 @@ import { makeFunctionReference } from "convex/server";
 import { demoPlaces } from "@/lib/demo-data";
 import type { MapPlace,Place,PlaceOption } from "@/lib/types";
 
+type Page<T> = { page: T[]; isDone: boolean; continueCursor: string };
+
 function client(): ConvexHttpClient | null {
   const url = process.env.NEXT_PUBLIC_CONVEX_URL;
   return url ? new ConvexHttpClient(url) : null;
@@ -13,15 +15,27 @@ function logConvexFallback(label: string, error: unknown) {
   console.warn(`${label}: ${message.slice(0, 500)}`);
 }
 
+async function queryAllPages<T>(convex: ConvexHttpClient, functionName: string): Promise<T[]> {
+  const rows: T[] = [];
+  let cursor: string | null = null;
+  do {
+    const result: Page<T> = await convex.query(
+      makeFunctionReference<"query", { paginationOpts: { cursor: string | null; numItems: number } }, Page<T>>(functionName),
+      { paginationOpts: { cursor, numItems: 75 } },
+    );
+    rows.push(...result.page);
+    cursor = result.isDone ? null : result.continueCursor;
+    if (result.isDone) return rows;
+  } while (cursor);
+  return rows;
+}
+
 export async function getPlaces(): Promise<Place[]> {
   const convex = client();
   if (!convex) return demoPlaces;
 
   try {
-    return await convex.query(
-      makeFunctionReference<"query", Record<string, never>, Place[]>("places:list"),
-      {},
-    );
+    return await queryAllPages<Place>(convex, "places:listPage");
   } catch (error) {
     logConvexFallback("Convex unavailable; showing clearly labelled demo data", error);
     return demoPlaces;
@@ -33,10 +47,7 @@ export async function getMapPlaces(): Promise<MapPlace[]> {
   if (!convex) return demoPlaces;
 
   try {
-    return await convex.query(
-      makeFunctionReference<"query", Record<string, never>, MapPlace[]>("places:listMap"),
-      {},
-    );
+    return await queryAllPages<MapPlace>(convex, "places:listMapPage");
   } catch (error) {
     logConvexFallback("Convex unavailable; falling back to map demo data", error);
     return demoPlaces;
