@@ -58,7 +58,8 @@ async function present(ctx: QueryCtx, place: Doc<"places">) {
     highlights: { es: editorial?.highlightsEs ?? [], en: editorial?.highlightsEn ?? [] },
     methodologyVersion: editorial?.methodologyVersion ?? (community.length ? "community-1.0" : automatic?.methodologyVersion ?? "automatic-unknown"),
     analyzedAt: new Date(analyzedAt).toISOString().slice(0, 10), communityScore, communityRatingCount: community.length, communityPhotos,
-    automaticScore, automaticEvidenceCount: automatic?.evidenceCount, automaticComplete: automatic?.complete };
+    automaticScore, automaticEvidenceCount: automatic?.evidenceCount, automaticComplete: automatic?.complete,
+    createdAt: place.createdAt };
 }
 
 export const list = query({ args: {}, handler: async ctx => {
@@ -66,7 +67,7 @@ export const list = query({ args: {}, handler: async ctx => {
   return (await Promise.all(places.map(place => present(ctx, place)))).filter(Boolean);
 } });
 export const listPage = query({ args: { paginationOpts: paginationOptsValidator }, handler: async (ctx, { paginationOpts }) => {
-  const result = await ctx.db.query("places").filter(query => query.eq(query.field("status"), "published")).paginate(paginationOpts);
+  const result = await ctx.db.query("places").order("desc").filter(query => query.eq(query.field("status"), "published")).paginate(paginationOpts);
   return { ...result, page: (await Promise.all(result.page.map(place => present(ctx, place)))).filter(Boolean) };
 } });
 export const listMap = query({ args: {}, handler: async ctx => {
