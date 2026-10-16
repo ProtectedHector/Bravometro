@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { HomePlaceSearch } from "@/components/HomePlaceSearch";
 import { PlaceCard } from "@/components/PlaceCard";
 import { getPlaces } from "@/lib/data";
@@ -11,7 +12,7 @@ import { futureMeters } from "@/lib/meters";
 export async function generateMetadata({params}:{params:Promise<{locale:string}>}):Promise<Metadata>{const {locale}=await params;return {title:locale==="en"?"Find the best patatas bravas":"Descubre las mejores patatas bravas",alternates:{canonical:`/${locale}`,languages:{es:"/es",en:"/en"}}}}
 
 export default async function Home({params}:{params:Promise<{locale:string}>}){
-  const {locale}=await params;if(!isLocale(locale))notFound();const d=getDictionary(locale);const places=(await getPlaces()).filter(p=>p.productType==="bravas").sort((a,b)=>b.scores.overall-a.scores.overall);
+  const {locale}=await params;if(!isLocale(locale))notFound();await connection();const d=getDictionary(locale);const places=(await getPlaces()).filter(p=>p.productType==="bravas").sort((a,b)=>b.scores.overall-a.scores.overall);
   return <>
     <section className="hero"><div className="shell hero-grid"><div className="hero-copy"><span className="eyebrow">{d.hero.eyebrow}</span><h1 className="display">{d.hero.title}<span className="accent">{d.hero.accent}</span></h1><p className="lede">{d.hero.description}</p>
       <HomePlaceSearch locale={locale} dictionary={d} enabled={Boolean(process.env.GOOGLE_MAPS_API_KEY)} mapApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY} mapId={process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID}/><p className="hero-note">● {d.hero.popular}</p><div className="hero-actions"><Link className="button" href={`/${locale}/bravas`}>{d.actions.explore}</Link><Link className="button secondary" href={`/${locale}/metodologia`}>{d.nav.methodology}</Link></div></div>
