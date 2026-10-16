@@ -17,7 +17,7 @@ type SearchParamsReader = Pick<URLSearchParams, "get">;
 
 export const DEFAULT_CATALOG_STATE: CatalogState = {
   search: "",
-  city: "",
+  city: "Madrid",
   area: "",
   sort: "score",
   withoutPhoto: false,
@@ -30,7 +30,7 @@ export function readCatalogState(params: SearchParamsReader): CatalogState {
   const page = Number.parseInt(params.get("page") ?? "1", 10);
   return {
     search: params.get("q")?.trim() ?? "",
-    city: params.get("city")?.trim() ?? "",
+    city: params.get("city")?.trim() || DEFAULT_CATALOG_STATE.city,
     area: params.get("area")?.trim() ?? "",
     sort: CATALOG_SORTS.includes(sort as CatalogSort) ? sort as CatalogSort : "score",
     withoutPhoto: params.get("noPhoto") === "1",
