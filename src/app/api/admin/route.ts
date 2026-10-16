@@ -18,6 +18,7 @@ function statusFor(error:unknown){
   const message=error instanceof Error?error.message:"Error interno";
   if(message==="Debes iniciar sesión")return 401;
   if(message.startsWith("Solo el administrador"))return 403;
+  if(message.includes("slug ya está en uso"))return 409;
   if(message.includes("configur"))return 503;
   return 500;
 }

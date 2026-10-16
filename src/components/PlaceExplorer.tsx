@@ -1,13 +1,14 @@
 "use client";
 import { useMemo, useState } from "react";
 import { PlaceCard } from "@/components/PlaceCard";
+import { Pagination } from "@/components/Pagination";
 import { track } from "@/lib/analytics";
 import type { Dictionary } from "@/lib/i18n";
 import type { Locale, Place } from "@/lib/types";
 
 const PAGE_SIZE = 24;
 
-export function PlaceExplorer({ places, locale, dictionary: d, ranking = false, isAdmin = false }: { places: Place[]; locale: Locale; dictionary: Dictionary; ranking?: boolean; isAdmin?: boolean }) {
+export function PlaceExplorer({ places, totalRegistered = places.length, locale, dictionary: d, ranking = false, isAdmin = false }: { places: Place[]; totalRegistered?: number; locale: Locale; dictionary: Dictionary; ranking?: boolean; isAdmin?: boolean }) {
   const [search,setSearch]=useState(""); const [city,setCity]=useState(""); const [area,setArea]=useState(""); const [sort,setSort]=useState("score"); const [withoutPhoto,setWithoutPhoto]=useState(false); const [page,setPage]=useState(1);
   const cities=[...new Set(places.map(p=>p.city))].sort();
   const areas=[...new Set(places.filter(p=>p.city===city).map(p=>p.neighborhood))].sort();
@@ -24,7 +25,7 @@ export function PlaceExplorer({ places, locale, dictionary: d, ranking = false, 
       <select className="select" value={sort} onChange={e=>{setSort(e.target.value);setPage(1)}} aria-label="Orden"><option value="score">{d.ranking.sortScore}</option><option value="recent">{d.ranking.sortRecent}</option><option value="confidence">{d.ranking.sortConfidence}</option><option value="evidence">{d.ranking.sortEvidence}</option></select>
       {isAdmin&&<label className="photo-filter"><input type="checkbox" checked={withoutPhoto} onChange={e=>{setWithoutPhoto(e.target.checked);setPage(1)}}/><span>{d.places.withoutPhoto}</span></label>}
     </div>
-    <div className="results-bar"><span><b>{filtered.length}</b> {d.places.results}</span>{(search||city||area||sort!=="score"||withoutPhoto)&&<button className="button ghost" onClick={reset}>{d.actions.clear}</button>}</div>
-    {filtered.length?<><div className="grid-3">{visible.map((place,index)=><PlaceCard key={place.id} place={place} locale={locale} dictionary={d} rank={ranking?(currentPage-1)*PAGE_SIZE+index+1:undefined}/>)}</div>{totalPages>1&&<nav className="pagination" aria-label={locale==="es"?"Paginación de establecimientos":"Place pagination"}><button className="button secondary" onClick={()=>setPage(currentPage-1)} disabled={currentPage===1}>← {d.actions.previous}</button><div className="pagination-pages">{Array.from({length:totalPages},(_,index)=>index+1).map(value=><button key={value} className={value===currentPage?"active":""} onClick={()=>setPage(value)} aria-current={value===currentPage?"page":undefined} aria-label={`${locale==="es"?"Página":"Page"} ${value}`}>{value}</button>)}</div><button className="button secondary" onClick={()=>setPage(currentPage+1)} disabled={currentPage===totalPages}>{d.actions.next} →</button></nav>}</>:<div className="card content-card"><h2>{d.common.noResults}</h2><p>{locale==="es"?"Busca cualquier establecimiento desde la portada o añádelo automáticamente al valorarlo.":"Search for any venue from the home page or add it automatically by rating it."}</p><a className="button" href={`/${locale}/publicar`}>{d.contribute.ratePlace} →</a></div>}
+    <div className="results-bar"><span>{search||city||area||withoutPhoto?<><b>{filtered.length}</b> {d.places.resultsLoaded} · {totalRegistered.toLocaleString(locale)} {d.places.registered}</>:<><b>{totalRegistered.toLocaleString(locale)}</b> {d.places.registered}!</>}</span>{(search||city||area||sort!=="score"||withoutPhoto)&&<button className="button ghost" onClick={reset}>{d.actions.clear}</button>}</div>
+    {filtered.length?<><div className="grid-3">{visible.map((place,index)=><PlaceCard key={place.id} place={place} locale={locale} dictionary={d} rank={ranking?(currentPage-1)*PAGE_SIZE+index+1:undefined}/>)}</div><Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} previousLabel={d.actions.previous} nextLabel={d.actions.next} pageLabel={locale==="es"?"Página":"Page"}/></>:<div className="card content-card"><h2>{d.common.noResults}</h2><p>{locale==="es"?"Busca cualquier establecimiento desde la portada o añádelo automáticamente al valorarlo.":"Search for any venue from the home page or add it automatically by rating it."}</p><a className="button" href={`/${locale}/publicar`}>{d.contribute.ratePlace} →</a></div>}
   </>;
 }
