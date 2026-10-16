@@ -62,6 +62,24 @@ async function present(ctx: QueryCtx, place: Doc<"places">) {
     createdAt: place.createdAt };
 }
 
+async function mapOverall(ctx: QueryCtx, placeId: Doc<"places">["_id"]) {
+  const [editorial, automatic, community] = await Promise.all([
+    ctx.db.query("dishRatings").withIndex("by_place", query => query.eq("placeId", placeId)).filter(query => query.eq(query.field("productType"), "bravas")).first(),
+    ctx.db.query("automaticRatings").withIndex("by_placeId", query => query.eq("placeId", placeId)).unique(),
+    ctx.db.query("userRatings").withIndex("by_place", query => query.eq("placeId", placeId)).filter(query => query.and(query.eq(query.field("status"), "approved"), query.eq(query.field("productType"), "bravas"))).take(200),
+  ]);
+  if (editorial) return overallFromRating(editorial);
+  if (community.length) {
+    const average = (field: "potatoScore" | "sauceScore" | "spicinessScore" | "tasteScore" | "textureScore" | "quantityScore" | "valueScore") => roundScore(community.reduce((sum, row) => sum + row[field], 0) / community.length);
+    return overallFromScores({ potato: average("potatoScore"), sauce: average("sauceScore"), spiciness: average("spicinessScore"), taste: average("tasteScore"), texture: average("textureScore"), quantity: average("quantityScore"), value: average("valueScore") });
+  }
+  return automatic ? automaticOverallFromScores({
+    potato: automatic.scores.potato ?? 5, sauce: automatic.scores.sauce ?? 5, spiciness: automatic.scores.spiciness ?? 5,
+    taste: automatic.scores.taste ?? 5, texture: automatic.scores.texture ?? 5, quantity: automatic.scores.quantity ?? 5,
+    value: automatic.scores.value ?? 5,
+  }, automatic.scoreWeights ?? automatic.scores) : undefined;
+}
+
 export const list = query({ args: {}, handler: async ctx => {
   const places = await ctx.db.query("places").filter(query => query.eq(query.field("status"), "published")).collect();
   return (await Promise.all(places.map(place => present(ctx, place)))).filter(Boolean);
@@ -69,6 +87,10 @@ export const list = query({ args: {}, handler: async ctx => {
 export const listPage = query({ args: { paginationOpts: paginationOptsValidator }, handler: async (ctx, { paginationOpts }) => {
   const result = await ctx.db.query("places").order("desc").filter(query => query.eq(query.field("status"), "published")).paginate(paginationOpts);
   return { ...result, page: (await Promise.all(result.page.map(place => present(ctx, place)))).filter(Boolean) };
+} });
+export const countPage = query({ args: { paginationOpts: paginationOptsValidator }, handler: async (ctx, { paginationOpts }) => {
+  const result = await ctx.db.query("places").filter(query => query.eq(query.field("status"), "published")).paginate(paginationOpts);
+  return { ...result, page: result.page.map(() => 1) };
 } });
 export const listMap = query({ args: {}, handler: async ctx => {
   const places = await ctx.db.query("places").filter(query => query.eq(query.field("status"), "published")).collect();
@@ -82,12 +104,8 @@ export const listMap = query({ args: {}, handler: async ctx => {
 } });
 export const listMapPage = query({ args: { paginationOpts: paginationOptsValidator }, handler: async (ctx, { paginationOpts }) => {
   const result = await ctx.db.query("places").filter(query => query.eq(query.field("status"), "published")).paginate(paginationOpts);
-  const page = [];
-  for (const place of result.page) {
-    const presented = await present(ctx, place);
-    page.push({ id: place._id, name: place.name, slug: place.slug, city: place.city, neighborhood: place.neighborhood,
-      address: place.address, latitude: place.latitude, longitude: place.longitude, productType: "bravas", scores: { overall: presented?.scores.overall } });
-  }
+  const page = await Promise.all(result.page.map(async place => ({ id: place._id, name: place.name, slug: place.slug, city: place.city, neighborhood: place.neighborhood,
+    address: place.address, latitude: place.latitude, longitude: place.longitude, productType: "bravas", scores: { overall: await mapOverall(ctx, place._id) } })));
   return { ...result, page };
 } });
 export const bySlug = query({ args: { slug: v.string() }, handler: async (ctx, { slug }) => {

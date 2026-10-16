@@ -43,6 +43,34 @@ export async function getPlaces(limit = Infinity): Promise<Place[]> {
   }
 }
 
+export async function getRegisteredPlaceCount(): Promise<number> {
+  const convex = client();
+  if (!convex) return demoPlaces.length;
+
+  try {
+    let total = 0;
+    let cursor: string | null = null;
+    do {
+      const result: Page<number> = await convex.query(
+        makeFunctionReference<"query", { paginationOpts: { cursor: string | null; numItems: number } }, Page<number>>("places:countPage"),
+        { paginationOpts: { cursor, numItems: 500 } },
+      );
+      total += result.page.length;
+      if (result.isDone) return total;
+      cursor = result.continueCursor;
+    } while (cursor);
+    return total;
+  } catch (error) {
+    logConvexFallback("Dedicated place count unavailable; using the compatible map listing", error);
+    try {
+      return (await queryAllPages<MapPlace>(convex, "places:listMapPage")).length;
+    } catch (fallbackError) {
+      logConvexFallback("Could not count registered places", fallbackError);
+      return demoPlaces.length;
+    }
+  }
+}
+
 export async function getMapPlaces(): Promise<MapPlace[]> {
   const convex = client();
   if (!convex) return demoPlaces;
