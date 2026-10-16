@@ -1,3 +1,4 @@
+import { paginationOptsValidator } from "convex/server";
 import { query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
@@ -64,6 +65,10 @@ export const list = query({ args: {}, handler: async ctx => {
   const places = await ctx.db.query("places").filter(query => query.eq(query.field("status"), "published")).collect();
   return (await Promise.all(places.map(place => present(ctx, place)))).filter(Boolean);
 } });
+export const listPage = query({ args: { paginationOpts: paginationOptsValidator }, handler: async (ctx, { paginationOpts }) => {
+  const result = await ctx.db.query("places").filter(query => query.eq(query.field("status"), "published")).paginate(paginationOpts);
+  return { ...result, page: (await Promise.all(result.page.map(place => present(ctx, place)))).filter(Boolean) };
+} });
 export const listMap = query({ args: {}, handler: async ctx => {
   const places = await ctx.db.query("places").filter(query => query.eq(query.field("status"), "published")).collect();
   const rows = [];
@@ -73,6 +78,16 @@ export const listMap = query({ args: {}, handler: async ctx => {
       address: place.address, latitude: place.latitude, longitude: place.longitude, productType: "bravas", scores: { overall: presented?.scores.overall } });
   }
   return rows;
+} });
+export const listMapPage = query({ args: { paginationOpts: paginationOptsValidator }, handler: async (ctx, { paginationOpts }) => {
+  const result = await ctx.db.query("places").filter(query => query.eq(query.field("status"), "published")).paginate(paginationOpts);
+  const page = [];
+  for (const place of result.page) {
+    const presented = await present(ctx, place);
+    page.push({ id: place._id, name: place.name, slug: place.slug, city: place.city, neighborhood: place.neighborhood,
+      address: place.address, latitude: place.latitude, longitude: place.longitude, productType: "bravas", scores: { overall: presented?.scores.overall } });
+  }
+  return { ...result, page };
 } });
 export const bySlug = query({ args: { slug: v.string() }, handler: async (ctx, { slug }) => {
   const place = await ctx.db.query("places").withIndex("by_slug", query => query.eq("slug", slug)).unique();
