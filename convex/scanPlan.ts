@@ -35,8 +35,25 @@ function municipalityArea(area: MunicipalityScanArea): ScanArea {
   };
 }
 
-// Keep the original 24 Madrid city entries first: persisted targets refer to
-// their numeric areaIndex. New municipalities must only ever be appended.
+const REGIONS_BEFORE_CATALONIA = [
+  "Castilla-La Mancha",
+  "Castilla y León",
+  "Extremadura",
+  "Región de Murcia",
+  "Andalucía",
+] as const;
+
+const regionsBeforeCatalonia = new Set<string>(REGIONS_BEFORE_CATALONIA);
+const municipalitiesBeforeCatalonia = REGIONS_BEFORE_CATALONIA.flatMap((region) =>
+  OTHER_SPANISH_MUNICIPALITIES.filter((area) => area.region === region),
+);
+const remainingSpanishMunicipalities = OTHER_SPANISH_MUNICIPALITIES.filter(
+  (area) => !regionsBeforeCatalonia.has(area.region),
+);
+
+// Keep the original 24 Madrid city entries first because persisted targets
+// refer to their numeric areaIndex. The nationwide expansion follows the
+// product-priority region order below.
 export const SCAN_AREAS: readonly ScanArea[] = [
   ...MADRID_CITY_AREAS.map((area) => ({
     label: `${area} · Madrid`,
@@ -46,8 +63,9 @@ export const SCAN_AREAS: readonly ScanArea[] = [
   })),
   ...MADRID_MUNICIPALITIES.map(municipalityArea),
   ...VALENCIAN_MUNICIPALITIES.map(municipalityArea),
+  ...municipalitiesBeforeCatalonia.map(municipalityArea),
   ...CATALAN_MUNICIPALITIES.map(municipalityArea),
-  ...OTHER_SPANISH_MUNICIPALITIES.map(municipalityArea),
+  ...remainingSpanishMunicipalities.map(municipalityArea),
 ];
 
 export const DISCOVERY_QUERY_ROUNDS = [

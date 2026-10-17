@@ -1,6 +1,7 @@
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { demoPlaces } from "@/lib/demo-data";
+import { addRegionsToPlaces } from "@/lib/place-regions";
 import type { MapPlace,Place,PlaceOption } from "@/lib/types";
 
 type Page<T> = { page: T[]; isDone: boolean; continueCursor: string };
@@ -33,13 +34,13 @@ async function queryAllPages<T>(convex: ConvexHttpClient, functionName: string, 
 
 export async function getPlaces(limit = Infinity): Promise<Place[]> {
   const convex = client();
-  if (!convex) return demoPlaces.slice(0, limit);
+  if (!convex) return addRegionsToPlaces(demoPlaces.slice(0, limit));
 
   try {
-    return await queryAllPages<Place>(convex, "places:listPage", limit);
+    return addRegionsToPlaces(await queryAllPages<Place>(convex, "places:listPage", limit));
   } catch (error) {
     logConvexFallback("Convex unavailable; showing clearly labelled demo data", error);
-    return demoPlaces.slice(0, limit);
+    return addRegionsToPlaces(demoPlaces.slice(0, limit));
   }
 }
 
@@ -85,16 +86,17 @@ export async function getMapPlaces(): Promise<MapPlace[]> {
 
 export async function getPlaceBySlug(slug: string): Promise<Place | null> {
   const convex = client();
-  if (!convex) return demoPlaces.find((place) => place.slug === slug) ?? null;
+  if (!convex) return addRegionsToPlaces(demoPlaces).find((place) => place.slug === slug) ?? null;
 
   try {
-    return await convex.query(
+    const place = await convex.query(
       makeFunctionReference<"query", { slug: string }, Place | null>("places:bySlug"),
       { slug },
     );
+    return place ? addRegionsToPlaces([place])[0] : null;
   } catch (error) {
     logConvexFallback("Convex unavailable; falling back to demo data", error);
-    return demoPlaces.find((place) => place.slug === slug) ?? null;
+    return addRegionsToPlaces(demoPlaces).find((place) => place.slug === slug) ?? null;
   }
 }
 
