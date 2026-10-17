@@ -42,6 +42,7 @@ export interface Place {
   name: string;
   slug: string;
   city: string;
+  region?: string;
   country: string;
   neighborhood: string;
   address: string;

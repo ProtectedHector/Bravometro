@@ -5,6 +5,7 @@ export const CATALOG_SORTS = ["score", "recent", "confidence", "evidence"] as co
 export type CatalogSort = (typeof CATALOG_SORTS)[number];
 export type CatalogState = {
   search: string;
+  region: string;
   city: string;
   area: string;
   sort: CatalogSort;
@@ -17,6 +18,7 @@ type SearchParamsReader = Pick<URLSearchParams, "get">;
 
 export const DEFAULT_CATALOG_STATE: CatalogState = {
   search: "",
+  region: "Comunidad de Madrid",
   city: "Madrid",
   area: "",
   sort: "score",
@@ -25,12 +27,25 @@ export const DEFAULT_CATALOG_STATE: CatalogState = {
   page: 1,
 };
 
+export const CLEARED_CATALOG_STATE: CatalogState = {
+  ...DEFAULT_CATALOG_STATE,
+  region: "",
+  city: "",
+};
+
 export function readCatalogState(params: SearchParamsReader): CatalogState {
   const sort = params.get("sort");
   const page = Number.parseInt(params.get("page") ?? "1", 10);
+  const regionParam = params.get("region");
+  const cityParam = params.get("city");
   return {
     search: params.get("q")?.trim() ?? "",
-    city: params.get("city")?.trim() || DEFAULT_CATALOG_STATE.city,
+    region: regionParam === null
+      ? (cityParam === null ? DEFAULT_CATALOG_STATE.region : "")
+      : regionParam.trim(),
+    city: cityParam === null
+      ? (regionParam === null ? DEFAULT_CATALOG_STATE.city : "")
+      : cityParam.trim(),
     area: params.get("area")?.trim() ?? "",
     sort: CATALOG_SORTS.includes(sort as CatalogSort) ? sort as CatalogSort : "score",
     withoutPhoto: params.get("noPhoto") === "1",
@@ -42,7 +57,8 @@ export function readCatalogState(params: SearchParamsReader): CatalogState {
 export function buildCatalogHref(locale: string, state: CatalogState): string {
   const params = new URLSearchParams();
   if (state.search) params.set("q", state.search);
-  if (state.city) params.set("city", state.city);
+  params.set("region", state.region);
+  params.set("city", state.city);
   if (state.area) params.set("area", state.area);
   if (state.sort !== "score") params.set("sort", state.sort);
   if (state.withoutPhoto) params.set("noPhoto", "1");
@@ -57,6 +73,7 @@ export function filterCatalogPlaces(places: Place[], state: CatalogState): Place
   return places
     .filter((place) =>
       `${place.name} ${place.neighborhood} ${place.city}`.toLocaleLowerCase().includes(search) &&
+      (!state.region || place.region === state.region) &&
       (!state.city || place.city === state.city) &&
       (!state.area || place.neighborhood === state.area) &&
       (!state.withoutPhoto || (!place.image && !place.communityPhotos?.some((photo) => photo.url))) &&

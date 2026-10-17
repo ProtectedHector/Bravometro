@@ -38,6 +38,26 @@ test("the rest of Spain follows Catalonia without duplicating the first three re
   assert.equal(new Set(municipalities.map(area => `${area.province}\0${area.municipality}`)).size, municipalities.length);
 });
 
+test("the requested regions are scanned in order before Catalonia", () => {
+  const source = readFileSync(new URL("../convex/scanPlan.ts", import.meta.url), "utf8");
+  const requestedOrder = [
+    "Castilla-La Mancha",
+    "Castilla y León",
+    "Extremadura",
+    "Región de Murcia",
+    "Andalucía",
+  ];
+  const configuredOrder = [...source.matchAll(/^\s+"([^"]+)",$/gm)]
+    .map(([, region]) => region)
+    .filter((region) => requestedOrder.includes(region));
+
+  assert.deepEqual(configuredOrder, requestedOrder);
+  assert.match(
+    source,
+    /\.\.\.municipalitiesBeforeCatalonia\.map\(municipalityArea\),\s+\.\.\.CATALAN_MUNICIPALITIES\.map\(municipalityArea\),\s+\.\.\.remainingSpanishMunicipalities\.map\(municipalityArea\),/,
+  );
+});
+
 test("successive rounds use different discovery searches", () => {
   const source = readFileSync(new URL("../convex/scanPlan.ts", import.meta.url), "utf8");
   assert.match(source, /DISCOVERY_QUERY_ROUNDS/);
